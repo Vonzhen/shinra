@@ -1,0 +1,70 @@
+{
+  "luci-app-shinra": {
+    "description": "Grant access to Shinra LuCI application",
+    "read": {
+      "ubus": {
+        "shinra": [
+          "status",
+          "profile_get",
+          "profile_source_get",
+          "profile_validate",
+          "subscriptions_get",
+          "node_snapshot_get",
+          "node_snapshot_summary",
+          "subscription_test_source",
+          "subscription_fetch_preflight",
+          "runtime_status",
+          "config_check_candidate",
+          "runtime_healthcheck",
+          "dashboard_overview",
+          "dashboard_metrics",
+          "selector_list",
+          "selector_delay_test",
+          "connections_list",
+          "connectivity_probe",
+          "ruleset_inventory",
+          "ruleset_policy_get",
+          "zashboard_source_get",
+          "zashboard_status",
+          "zashboard_update_check",
+          "notify_settings_get",
+          "auto_task_status_get",
+          "logs_get",
+          "last_error_get",
+          "diagnostics_get"
+        ]
+      }
+    },
+    "write": {
+      "ubus": {
+        "shinra": [
+          "profile_save",
+          "profile_source_save",
+          "profile_sync_remote",
+          "profile_restore_default",
+          "profile_rollback",
+          "subscriptions_save",
+          "subscriptions_refresh",
+          "subscriptions_refresh_auto",
+          "runtime_start",
+          "runtime_stop",
+          "runtime_restart",
+          "config_generate",
+          "candidate_generate",
+          "config_apply",
+          "config_rollback",
+          "selector_set",
+          "ruleset_policy_save",
+          "ruleset_download_required",
+          "ruleset_download_required_auto",
+          "zashboard_source_save",
+          "zashboard_sync_remote",
+          "zashboard_update_check",
+          "zashboard_update_apply",
+          "notify_settings_save",
+          "notify_test_telegram"
+        ]
+      }
+    }
+  }
+}

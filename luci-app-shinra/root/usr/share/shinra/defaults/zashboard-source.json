@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "url": "",
+  "repository": {
+    "type": "github",
+    "owner": "Zephyruso",
+    "repo": "zashboard",
+    "asset_pattern": "dist.zip",
+    "proxy_prefix": "https://gh-proxy.com/"
+  },
+  "installed": {
+    "version": "",
+    "updated_at": ""
+  },
+  "last_check": {
+    "version": "",
+    "asset_name": "",
+    "asset_url": "",
+    "download_url": "",
+    "checked_at": "",
+    "result": "",
+    "update_available": false
+  },
+  "panel_api": {
+    "enabled": true,
+    "external_controller": "0.0.0.0:20123",
+    "secret": "",
+    "allow_empty_secret": true
+  }
+}

@@ -1,0 +1,548 @@
+﻿{
+    "log":  {
+                "level":  "info"
+            },
+    "http_clients":  [
+                         {
+                             "tag":  "global-downloader"
+                         }
+                     ],
+    "dns":  {
+                "servers":  [
+                                {
+                                    "tag":  "Ali-DNS",
+                                    "type":  "https",
+                                    "server":  "223.5.5.5"
+                                },
+                                {
+                                    "tag":  "Google-DNS",
+                                    "type":  "https",
+                                    "detour":  "馃椊 鑺傜偣閫夋嫨",
+                                    "server":  "8.8.8.8"
+                                },
+                                {
+                                    "tag":  "Cloudflare-DNS",
+                                    "type":  "https",
+                                    "detour":  "馃椊 鑺傜偣閫夋嫨",
+                                    "server":  "1.1.1.1"
+                                }
+                            ],
+                "rules":  [
+                              {
+                                  "action":  "reject",
+                                  "rule_set":  "geosite-category-ads-all",
+                                  "method":  "default"
+                              },
+                              {
+                                  "action":  "route",
+                                  "clash_mode":  "direct",
+                                  "server":  "Ali-DNS"
+                              },
+                              {
+                                  "action":  "route",
+                                  "clash_mode":  "global",
+                                  "server":  "Cloudflare-DNS"
+                              },
+                              {
+                                  "action":  "route",
+                                  "rule_set":  "geosite-cn",
+                                  "server":  "Ali-DNS"
+                              },
+                              {
+                                  "action":  "route",
+                                  "rule_set":  "geosite-geolocation-!cn",
+                                  "server":  "Cloudflare-DNS"
+                              },
+                              {
+                                  "action":  "evaluate",
+                                  "server":  "Cloudflare-DNS"
+                              },
+                              {
+                                  "action":  "route",
+                                  "match_response":  true,
+                                  "rule_set":  "geoip-cn",
+                                  "server":  "Ali-DNS"
+                              },
+                              {
+                                  "action":  "route",
+                                  "server":  "Cloudflare-DNS"
+                              }
+                          ],
+                "final":  "Google-DNS",
+                "strategy":  "prefer_ipv4"
+            },
+    "inbounds":  [
+                     {
+                         "type":  "tun",
+                         "tag":  "tun-in",
+                         "mtu":  9000,
+                         "address":  [
+                                         "172.18.0.1/30",
+                                         "fdfe:dcba:9876::1/126"
+                                     ],
+                         "auto_route":  true,
+                         "strict_route":  false,
+                         "stack":  "mixed",
+                         "dns_mode":  "hijack"
+                     }
+                 ],
+    "outbounds":  [
+                      {
+                          "type":  "direct",
+                          "tag":  "馃幆 鍏ㄧ悆鐩磋繛"
+                      },
+                      {
+                          "type":  "selector",
+                          "tag":  "馃椊 鑺傜偣閫夋嫨",
+                          "x_rule":  "main",
+                          "interrupt_exist_connections":  true,
+                          "outbounds":  [
+                                            "馃幆 鍏ㄧ悆鐩磋繛"
+                                        ]
+                      },
+                      {
+                          "type":  "selector",
+                          "tag":  "馃摵锔?Netflix",
+                          "x_rule":  "region:SG,HK,TW",
+                          "interrupt_exist_connections":  true,
+                          "outbounds":  [
+                                            "馃椊 鑺傜偣閫夋嫨"
+                                        ]
+                      },
+                      {
+                          "type":  "selector",
+                          "tag":  "馃寑 Hamivideo",
+                          "x_rule":  "region:TW",
+                          "interrupt_exist_connections":  true,
+                          "outbounds":  [
+                                            "馃椊 鑺傜偣閫夋嫨"
+                                        ]
+                      },
+                      {
+                          "type":  "selector",
+                          "tag":  "馃摴锔?HBO max",
+                          "x_rule":  "region:SG,HK,TW",
+                          "interrupt_exist_connections":  true,
+                          "outbounds":  [
+                                            "馃椊 鑺傜偣閫夋嫨"
+                                        ]
+                      },
+                      {
+                          "type":  "selector",
+                          "tag":  "馃晬 Disney Plus",
+                          "x_rule":  "region:SG,HK,TW",
+                          "interrupt_exist_connections":  true,
+                          "outbounds":  [
+                                            "馃椊 鑺傜偣閫夋嫨"
+                                        ]
+                      },
+                      {
+                          "type":  "selector",
+                          "tag":  "馃幀锔?Prime Video",
+                          "x_rule":  "region:SG,HK,TW",
+                          "interrupt_exist_connections":  true,
+                          "outbounds":  [
+                                            "馃椊 鑺傜偣閫夋嫨"
+                                        ]
+                      },
+                      {
+                          "type":  "selector",
+                          "tag":  "馃帴 YouTube",
+                          "x_rule":  "all_regions",
+                          "interrupt_exist_connections":  true,
+                          "outbounds":  [
+                                            "馃椊 鑺傜偣閫夋嫨"
+                                        ]
+                      },
+                      {
+                          "type":  "selector",
+                          "tag":  "馃寧 Google",
+                          "x_rule":  "all_regions",
+                          "interrupt_exist_connections":  true,
+                          "outbounds":  [
+                                            "馃椊 鑺傜偣閫夋嫨"
+                                        ]
+                      },
+                      {
+                          "type":  "selector",
+                          "tag":  "馃帪 Emby",
+                          "x_rule":  "region+direct:HK,SG,US",
+                          "interrupt_exist_connections":  true,
+                          "outbounds":  [
+                                            "馃椊 鑺傜偣閫夋嫨"
+                                        ]
+                      },
+                      {
+                          "type":  "selector",
+                          "tag":  "馃捒 Spotify",
+                          "x_rule":  "all_regions",
+                          "interrupt_exist_connections":  true,
+                          "outbounds":  [
+                                            "馃椊 鑺傜偣閫夋嫨"
+                                        ]
+                      },
+                      {
+                          "type":  "selector",
+                          "tag":  "馃摻锔?TikTok",
+                          "x_rule":  "all_regions",
+                          "interrupt_exist_connections":  true,
+                          "outbounds":  [
+                                            "馃椊 鑺傜偣閫夋嫨"
+                                        ]
+                      },
+                      {
+                          "type":  "selector",
+                          "tag":  "馃洨锔?Telegram",
+                          "x_rule":  "all_regions",
+                          "interrupt_exist_connections":  true,
+                          "outbounds":  [
+                                            "馃椊 鑺傜偣閫夋嫨"
+                                        ]
+                      },
+                      {
+                          "type":  "selector",
+                          "tag":  "馃吘锔?OpenAI",
+                          "x_rule":  "region:US",
+                          "interrupt_exist_connections":  true,
+                          "outbounds":  [
+                                            "馃椊 鑺傜偣閫夋嫨"
+                                        ]
+                      },
+                      {
+                          "type":  "selector",
+                          "tag":  "馃崕 Apple",
+                          "x_rule":  "keep",
+                          "interrupt_exist_connections":  true,
+                          "outbounds":  [
+                                            "馃椊 鑺傜偣閫夋嫨",
+                                            "馃幆 鍏ㄧ悆鐩磋繛"
+                                        ]
+                      },
+                      {
+                          "type":  "selector",
+                          "tag":  "馃惂 Tencent",
+                          "x_rule":  "keep",
+                          "interrupt_exist_connections":  true,
+                          "outbounds":  [
+                                            "馃椊 鑺傜偣閫夋嫨",
+                                            "馃幆 鍏ㄧ悆鐩磋繛"
+                                        ]
+                      },
+                      {
+                          "type":  "selector",
+                          "tag":  "馃悷 婕忕綉涔嬮奔",
+                          "x_rule":  "keep",
+                          "interrupt_exist_connections":  true,
+                          "outbounds":  [
+                                            "馃椊 鑺傜偣閫夋嫨"
+                                        ]
+                      },
+                      {
+                          "type":  "selector",
+                          "tag":  "馃寪 GLOBAL",
+                          "x_rule":  "keep",
+                          "interrupt_exist_connections":  true,
+                          "outbounds":  [
+                                            "馃椊 鑺傜偣閫夋嫨"
+                                        ]
+                      }
+                  ],
+    "route":  {
+                  "rules":  [
+                                {
+                                    "action":  "sniff",
+                                    "inbound":  "tun-in"
+                                },
+                                {
+                                    "protocol":  "dns",
+                                    "action":  "hijack-dns"
+                                },
+                                {
+                                    "clash_mode":  "direct",
+                                    "outbound":  "馃幆 鍏ㄧ悆鐩磋繛"
+                                },
+                                {
+                                    "clash_mode":  "global",
+                                    "outbound":  "馃寪 GLOBAL"
+                                },
+                                {
+                                    "rule_set":  "geosite-category-ads-all",
+                                    "action":  "reject"
+                                },
+                                {
+                                    "rule_set":  [
+                                                     "geosite-apple",
+                                                     "geoip-apple"
+                                                 ],
+                                    "outbound":  "馃崕 Apple"
+                                },
+                                {
+                                    "rule_set":  [
+                                                     "geosite-tencent"
+                                                 ],
+                                    "outbound":  "馃惂 Tencent"
+                                },
+                                {
+                                    "rule_set":  [
+                                                     "geosite-openai"
+                                                 ],
+                                    "outbound":  "馃吘锔?OpenAI"
+                                },
+                                {
+                                    "rule_set":  [
+                                                     "geosite-youtube"
+                                                 ],
+                                    "outbound":  "馃帴 YouTube"
+                                },
+                                {
+                                    "rule_set":  [
+                                                     "geoip-google",
+                                                     "geosite-google"
+                                                 ],
+                                    "outbound":  "馃寧 Google"
+                                },
+                                {
+                                    "rule_set":  [
+                                                     "geosite-netflix",
+                                                     "geoip-netflix"
+                                                 ],
+                                    "outbound":  "馃摵锔?Netflix"
+                                },
+                                {
+                                    "rule_set":  [
+                                                     "geosite-hbo"
+                                                 ],
+                                    "outbound":  "馃摴锔?HBO max"
+                                },
+                                {
+                                    "rule_set":  [
+                                                     "geosite-disney"
+                                                 ],
+                                    "outbound":  "馃晬 Disney Plus"
+                                },
+                                {
+                                    "rule_set":  [
+                                                     "geosite-primevideo"
+                                                 ],
+                                    "outbound":  "馃幀锔?Prime Video"
+                                },
+                                {
+                                    "rule_set":  [
+                                                     "geosite-hamivideo",
+                                                     "geosite-hinet",
+                                                     "geosite-hinet-eca"
+                                                 ],
+                                    "outbound":  "馃寑 Hamivideo"
+                                },
+                                {
+                                    "rule_set":  [
+                                                     "geosite-spotify"
+                                                 ],
+                                    "outbound":  "馃捒 Spotify"
+                                },
+                                {
+                                    "rule_set":  [
+                                                     "geosite-tiktok"
+                                                 ],
+                                    "outbound":  "馃摻锔?TikTok"
+                                },
+                                {
+                                    "rule_set":  [
+                                                     "geosite-privateemby"
+                                                 ],
+                                    "outbound":  "馃帪 Emby"
+                                },
+                                {
+                                    "rule_set":  [
+                                                     "geosite-telegram",
+                                                     "geoip-telegram"
+                                                 ],
+                                    "outbound":  "馃洨锔?Telegram"
+                                },
+                                {
+                                    "rule_set":  [
+                                                     "geosite-cn",
+                                                     "geoip-cn",
+                                                     "geosite-privatedirect"
+                                                 ],
+                                    "outbound":  "馃幆 鍏ㄧ悆鐩磋繛"
+                                },
+                                {
+                                    "rule_set":  [
+                                                     "geosite-geolocation-!cn"
+                                                 ],
+                                    "outbound":  "馃椊 鑺傜偣閫夋嫨"
+                                }
+                            ],
+                  "rule_set":  [
+                                   {
+                                       "tag":  "geoip-google",
+                                       "type":  "remote",
+                                       "url":  "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geoip/google.srs",
+                                       "format":  "binary"
+                                   },
+                                   {
+                                       "tag":  "geosite-google",
+                                       "type":  "remote",
+                                       "url":  "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geosite/google.srs",
+                                       "format":  "binary"
+                                   },
+                                   {
+                                       "tag":  "geosite-spotify",
+                                       "type":  "remote",
+                                       "url":  "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo-lite/geosite/spotify.srs",
+                                       "format":  "binary"
+                                   },
+                                   {
+                                       "tag":  "geosite-tiktok",
+                                       "type":  "remote",
+                                       "url":  "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo-lite/geosite/tiktok.srs",
+                                       "format":  "binary"
+                                   },
+                                   {
+                                       "tag":  "geoip-telegram",
+                                       "type":  "remote",
+                                       "url":  "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geoip/telegram.srs",
+                                       "format":  "binary"
+                                   },
+                                   {
+                                       "tag":  "geosite-telegram",
+                                       "type":  "remote",
+                                       "url":  "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geosite/telegram.srs",
+                                       "format":  "binary"
+                                   },
+                                   {
+                                       "tag":  "geosite-disney",
+                                       "type":  "remote",
+                                       "url":  "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geosite/disney.srs",
+                                       "format":  "binary"
+                                   },
+                                   {
+                                       "tag":  "geosite-primevideo",
+                                       "type":  "remote",
+                                       "url":  "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geosite/primevideo.srs",
+                                       "format":  "binary"
+                                   },
+                                   {
+                                       "tag":  "geosite-openai",
+                                       "type":  "remote",
+                                       "url":  "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geosite/openai.srs",
+                                       "format":  "binary"
+                                   },
+                                   {
+                                       "tag":  "geosite-netflix",
+                                       "type":  "remote",
+                                       "url":  "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geosite/netflix.srs",
+                                       "format":  "binary"
+                                   },
+                                   {
+                                       "tag":  "geoip-netflix",
+                                       "type":  "remote",
+                                       "url":  "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geoip/netflix.srs",
+                                       "format":  "binary"
+                                   },
+                                   {
+                                       "tag":  "geosite-hbo",
+                                       "type":  "remote",
+                                       "url":  "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geosite/hbo.srs",
+                                       "format":  "binary"
+                                   },
+                                   {
+                                       "tag":  "geosite-hamivideo",
+                                       "type":  "remote",
+                                       "url":  "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geosite/hamivideo.srs",
+                                       "format":  "binary"
+                                   },
+                                   {
+                                       "tag":  "geosite-hinet",
+                                       "type":  "remote",
+                                       "url":  "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geosite/hinet.srs",
+                                       "format":  "binary"
+                                   },
+                                   {
+                                       "tag":  "geosite-hinet-eca",
+                                       "type":  "remote",
+                                       "url":  "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geosite/hinet-eca.srs",
+                                       "format":  "binary"
+                                   },
+                                   {
+                                       "tag":  "geosite-tencent",
+                                       "type":  "remote",
+                                       "url":  "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geosite/tencent.srs",
+                                       "format":  "binary"
+                                   },
+                                   {
+                                       "tag":  "geosite-privatedirect",
+                                       "type":  "remote",
+                                       "url":  "https://testingcf.jsdelivr.net/gh/Vonzhen/sing-box-rulesets@master/rules/geosite-privatedirect.srs",
+                                       "format":  "binary"
+                                   },
+                                   {
+                                       "tag":  "geosite-privateemby",
+                                       "type":  "remote",
+                                       "url":  "https://testingcf.jsdelivr.net/gh/Vonzhen/sing-box-rulesets@master/rules/geosite-privateemby.srs",
+                                       "format":  "binary"
+                                   },
+                                   {
+                                       "tag":  "geosite-youtube",
+                                       "type":  "remote",
+                                       "url":  "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geosite/youtube.srs",
+                                       "format":  "binary"
+                                   },
+                                   {
+                                       "tag":  "geosite-apple",
+                                       "type":  "remote",
+                                       "url":  "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo-lite/geosite/apple.srs",
+                                       "format":  "binary"
+                                   },
+                                   {
+                                       "tag":  "geoip-apple",
+                                       "type":  "remote",
+                                       "url":  "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo-lite/geoip/apple.srs",
+                                       "format":  "binary"
+                                   },
+                                   {
+                                       "tag":  "geosite-category-ads-all",
+                                       "type":  "remote",
+                                       "url":  "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geosite/category-ads-all.srs",
+                                       "format":  "binary"
+                                   },
+                                   {
+                                       "tag":  "geoip-cn",
+                                       "type":  "remote",
+                                       "url":  "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geoip/cn.srs",
+                                       "format":  "binary"
+                                   },
+                                   {
+                                       "tag":  "geosite-cn",
+                                       "type":  "remote",
+                                       "url":  "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geosite/cn.srs",
+                                       "format":  "binary"
+                                   },
+                                   {
+                                       "tag":  "geosite-geolocation-!cn",
+                                       "type":  "remote",
+                                       "url":  "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geosite/geolocation-!cn.srs",
+                                       "format":  "binary"
+                                   }
+                               ],
+                  "default_http_client":  "global-downloader",
+                  "auto_detect_interface":  true,
+                  "final":  "馃悷 婕忕綉涔嬮奔",
+                  "default_domain_resolver":  {
+                                                  "server":  "Ali-DNS"
+                                              }
+              },
+    "experimental":  {
+                         "clash_api":  {
+                                           "external_controller":  "127.0.0.1:20123",
+                                           "external_ui":  "",
+                                           "secret":  "",
+                                           "default_mode":  "rule"
+                                       },
+                         "cache_file":  {
+                                            "enabled":  true,
+                                            "store_dns":  true
+                                        }
+                     }
+}

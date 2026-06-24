@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "refresh_strategy": "direct",
+  "region_keywords": {
+    "HK": ["HK", "Hong Kong", "HongKong"],
+    "TW": ["TW", "Taiwan"],
+    "SG": ["SG", "Singapore"],
+    "JP": ["JP", "Japan"],
+    "US": ["US", "USA", "United States"]
+  },
+  "banned_keywords": "expire|expired|traffic|invalid|remaining",
+  "urltest_params": {
+    "url": "https://www.gstatic.com/generate_204",
+    "interval": "3m",
+    "tolerance": 150
+  },
+  "fetch_bypass": {
+    "enabled": false,
+    "mode": "temporary_rule",
+    "allow_lan": true,
+    "hosts": [],
+    "priority": 8000
+  },
+  "subscription_update": {
+    "auto_update": false,
+    "update_hour": 3,
+    "strategy": "saved",
+    "run_on_boot": false
+  },
+  "ruleset": {
+    "mode": "auto",
+    "auto_update": false,
+    "update_hour": 4,
+    "repositories": {
+      "private": "",
+      "public": "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing"
+    }
+  },
+  "sources": []
+}

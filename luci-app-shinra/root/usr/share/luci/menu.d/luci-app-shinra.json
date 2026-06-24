@@ -1,0 +1,46 @@
+{
+  "admin/services/shinra": {
+    "title": "Shinra",
+    "order": 60,
+    "action": {
+      "type": "firstchild"
+    },
+    "depends": {
+      "acl": [
+        "luci-app-shinra"
+      ]
+    }
+  },
+  "admin/services/shinra/overview": {
+    "title": "\u6982\u89c8",
+    "order": 10,
+    "action": {
+      "type": "view",
+      "path": "shinra/overview"
+    }
+  },
+  "admin/services/shinra/panel": {
+    "title": "\u9762\u677f",
+    "order": 20,
+    "action": {
+      "type": "view",
+      "path": "shinra/panel"
+    }
+  },
+  "admin/services/shinra/resources": {
+    "title": "\u8d44\u6e90\u7ba1\u7406",
+    "order": 30,
+    "action": {
+      "type": "view",
+      "path": "shinra/resources"
+    }
+  },
+  "admin/services/shinra/logs": {
+    "title": "\u7f51\u7edc\u8bca\u65ad",
+    "order": 40,
+    "action": {
+      "type": "view",
+      "path": "shinra/logs"
+    }
+  }
+}
