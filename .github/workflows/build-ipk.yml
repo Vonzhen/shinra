@@ -1,1 +1,31 @@
-1
+name: Build Shinra IPK
+
+on:
+  push:
+    branches: [ master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Assemble IPK Package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Provision Build Environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential gettext
+          wget https://raw.githubusercontent.com/openwrt/openwrt/master/scripts/ipkg-build -O /usr/local/bin/ipkg-build
+          chmod +x /usr/local/bin/ipkg-build
+
+      - name: Execute Physical Assembly
+        run: bash ./scripts/build.sh
+
+      - name: Upload IPK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: luci-app-shinra-ipk
+          path: "*.ipk"
+          retention-days: 7
