@@ -37,6 +37,7 @@ need_file "${APP_DIR}/root/etc/init.d/shinra"
 need_file "${APP_DIR}/root/usr/share/rpcd/ucode/shinra.uc"
 need_file "${APP_DIR}/root/usr/share/rpcd/acl.d/luci-app-shinra.json"
 need_file "${APP_DIR}/root/usr/share/luci/menu.d/luci-app-shinra.json"
+need_file "${APP_DIR}/root/usr/libexec/shinra-ensure-auto-task"
 need_file "${APP_DIR}/htdocs/luci-static/resources/view/shinra/overview.js"
 
 rm -rf "${BUILD_DIR}"
@@ -48,7 +49,9 @@ cp -a "${APP_DIR}/htdocs/." "${PKG_DIR}/www/"
 
 chmod 0755 "${PKG_DIR}/etc/init.d/shinra"
 chmod 0755 "${PKG_DIR}/etc/uci-defaults/90-shinra"
+chmod 0755 "${PKG_DIR}/usr/libexec/shinra-ensure-auto-task"
 chmod 0755 "${PKG_DIR}/usr/libexec/shinra-auto-task"
+chmod 0755 "${PKG_DIR}/usr/libexec/shinra-ruleset-sync-job"
 
 cat > "${CONTROL_DIR}/control" <<EOF
 Package: ${pkg_name}
@@ -57,7 +60,7 @@ Architecture: ${pkg_arch}
 Maintainer: Von <noreply@example.com>
 Section: luci
 Priority: optional
-Depends: luci-base, rpcd, rpcd-mod-ucode, ucode, ucode-mod-fs, ucode-mod-ubus, jsonfilter, sing-box, ip-full, ca-bundle, wget-ssl
+Depends: luci-base, rpcd, rpcd-mod-ucode, ucode, ucode-mod-fs, ucode-mod-ubus, jsonfilter, sing-box, ip-full, ca-bundle, wget-ssl, coreutils-timeout
 Description: Shinra sing-box TUN control panel for LuCI.
 EOF
 
@@ -69,6 +72,10 @@ set -e
 if [ -z "${IPKG_INSTROOT:-}" ]; then
 	if [ -x /etc/uci-defaults/90-shinra ]; then
 		/etc/uci-defaults/90-shinra || true
+	fi
+
+	if [ -x /usr/libexec/shinra-ensure-auto-task ]; then
+		/usr/libexec/shinra-ensure-auto-task || true
 	fi
 
 	/etc/init.d/rpcd restart 2>/dev/null || true
