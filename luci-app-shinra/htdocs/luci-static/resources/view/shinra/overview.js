@@ -32,9 +32,9 @@ const callNodeSnapshotSummary = rpc.declare({
 	expect: { '': {} }
 });
 
-const callRulesetInventory = rpc.declare({
+const callRulesetRequiredInventory = rpc.declare({
 	object: 'shinra',
-	method: 'ruleset_inventory',
+	method: 'ruleset_required_inventory',
 	expect: { '': {} }
 });
 
@@ -159,7 +159,20 @@ function statusWord(status) {
 
 function compactMessage(text) {
 	text = valueText(text);
-	text = text.replace(/\n/g, ' · ');
+	text = text.replace(/Required Rule Sets downloaded/g, '\u6240\u9700\u89c4\u5219\u96c6\u5df2\u540c\u6b65');
+	text = text.replace(/Rule Set sync running/g, '\u89c4\u5219\u96c6\u6b63\u5728\u540c\u6b65');
+	text = text.replace(/Rule Set sync queued/g, '\u89c4\u5219\u96c6\u540c\u6b65\u5df2\u6392\u961f');
+	text = text.replace(/Rule Set sync job started/g, '\u89c4\u5219\u96c6\u540c\u6b65\u4efb\u52a1\u5df2\u542f\u52a8');
+	text = text.replace(/Rule Set sync job is already running/g, '\u89c4\u5219\u96c6\u540c\u6b65\u4efb\u52a1\u6b63\u5728\u8fd0\u884c');
+	text = text.replace(/Rule Set sync success/g, '\u89c4\u5219\u96c6\u540c\u6b65\u6210\u529f');
+	text = text.replace(/Rule Set sync partial/g, '\u89c4\u5219\u96c6\u90e8\u5206\u540c\u6b65\u6210\u529f');
+	text = text.replace(/Rule Set sync fail/g, '\u89c4\u5219\u96c6\u540c\u6b65\u5931\u8d25');
+	text = text.replace(/Required:/g, '\u9700\u8981:');
+	text = text.replace(/Updated:/g, '\u5df2\u66f4\u65b0:');
+	text = text.replace(/Unchanged:/g, '\u672a\u53d8\u5316:');
+	text = text.replace(/Failed:/g, '\u5931\u8d25:');
+	text = text.replace(/Detail:/g, '\u8be6\u60c5:');
+	text = text.replace(/\n/g, ' | ');
 	return text;
 }
 
@@ -170,6 +183,34 @@ function autoJobText(job, disabledText, waitingText) {
 	if (job.enabled)
 		return waitingText || _('\u81ea\u52a8\u4efb\u52a1\u7b49\u5f85\u4e2d');
 	return disabledText || _('\u81ea\u52a8\u4efb\u52a1\u5df2\u505c\u7528');
+}
+
+function schedulerWarning(scheduler, enabled) {
+	scheduler = scheduler || {};
+	if (!enabled)
+		return '';
+	if (scheduler.healthy)
+		return '';
+	if (!scheduler.script_exists)
+		return _('\u81ea\u52a8\u4efb\u52a1\u811a\u672c\u7f3a\u5931');
+	if (!scheduler.script_executable)
+		return _('\u81ea\u52a8\u4efb\u52a1\u811a\u672c\u4e0d\u53ef\u6267\u884c');
+	if (!scheduler.cron_installed)
+		return _('\u7cfb\u7edf\u8ba1\u5212\u4efb\u52a1\u672a\u5b89\u88c5');
+	if (!scheduler.cron_running)
+		return _('cron \u672a\u8fd0\u884c');
+	return _('\u81ea\u52a8\u4efb\u52a1\u8c03\u5ea6\u5668\u5f02\u5e38');
+}
+
+function schedulerPlanText(enabled, hour) {
+	if (!enabled)
+		return _('\u81ea\u52a8\u4efb\u52a1\u5df2\u505c\u7528');
+	if (hour == null || hour === '')
+		return _('\u5df2\u542f\u7528\uff0c\u7b49\u5f85\u8c03\u5ea6');
+	hour = Number(hour);
+	if (!Number.isFinite(hour))
+		return _('\u5df2\u542f\u7528\uff0c\u7b49\u5f85\u8c03\u5ea6');
+	return _('\u6bcf\u65e5 %s:05 \u68c0\u67e5\u6267\u884c').format(hour < 10 ? '0' + hour : String(hour));
 }
 
 function actionLink(label, path, primary) {
@@ -256,7 +297,7 @@ function loadAll() {
 		callProfileGet().catch(function(e) { return { ok: false, message: _('\u6a21\u677f\u52a0\u8f7d\u5931\u8d25'), detail: e.message || String(e) }; }),
 		callSubscriptionsGet().catch(function(e) { return { ok: false, message: _('\u8ba2\u9605\u52a0\u8f7d\u5931\u8d25'), detail: e.message || String(e) }; }),
 		callNodeSnapshotSummary().catch(function(e) { return { ok: false, message: _('\u8282\u70b9\u5feb\u7167\u6458\u8981\u52a0\u8f7d\u5931\u8d25'), detail: e.message || String(e) }; }),
-		callRulesetInventory().catch(function(e) { return { ok: false, message: _('\u89c4\u5219\u96c6\u6e05\u5355\u52a0\u8f7d\u5931\u8d25'), detail: e.message || String(e) }; }),
+		callRulesetRequiredInventory().catch(function(e) { return { ok: false, message: _('\u89c4\u5219\u96c6\u6e05\u5355\u52a0\u8f7d\u5931\u8d25'), detail: e.message || String(e) }; }),
 		callZashboardStatus().catch(function(e) { return { ok: false, message: _('\u9762\u677f\u72b6\u6001\u52a0\u8f7d\u5931\u8d25'), detail: e.message || String(e) }; }),
 		callProfileSourceGet().catch(function(e) { return { ok: false, message: _('\u6a21\u677f\u6e90\u52a0\u8f7d\u5931\u8d25'), detail: e.message || String(e) }; }),
 		callRulesetPolicyGet().catch(function(e) { return { ok: false, message: _('\u89c4\u5219\u96c6\u7b56\u7565\u52a0\u8f7d\u5931\u8d25'), detail: e.message || String(e) }; }),
@@ -288,7 +329,7 @@ function runtimeCards() {
 	return E('div', { 'style': 'display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: .75rem; margin-bottom: 1rem;' }, [
 		card(_('\u8fd0\u884c\u65f6'), running ? _('\u8fd0\u884c\u4e2d') : _('\u5df2\u505c\u6b62'), running ? _('sing-box \u670d\u52a1\u8fd0\u884c\u4e2d') : _('\u670d\u52a1\u5df2\u505c\u6b62'), statusTone(running)),
 		card(_('TUN'), tun ? _('\u5b58\u5728') : _('\u7f3a\u5931'), state.tun_name || '-', statusTone(tun, running)),
-		card(_('Clash API'), clash ? _('\u53ef\u7528') : _('\u4e0d\u53ef\u7528'), clash ? _('\u9762\u677f\u53ef\u8fde\u63a5') : _('\u9762\u677f\u4e0d\u53ef\u7528'), statusTone(clash, running)),
+		card(_('Clash API'), clash ? _('\u53ef\u7528') : _('\u4e0d\u53ef\u7528'), clash ? _('\u672c\u5730 API \u53ef\u89c2\u6d4b') : _('\u672c\u5730 API \u672a\u89c2\u6d4b\u5230'), statusTone(clash, running)),
 		card(_('\u914d\u7f6e'), config ? _('\u5c31\u7eea') : _('\u7f3a\u5931'), state.runtime_config_hash ? _('\u5df2\u89c2\u6d4b\u5230\u8fd0\u884c\u914d\u7f6e\u54c8\u5e0c') : _('\u8fd0\u884c\u914d\u7f6e\u7f3a\u5931'), statusTone(config))
 	]);
 }
@@ -308,21 +349,28 @@ function resourceCards() {
 	const notifySettings = notifyData.settings || {};
 	const notifyTelegram = notifySettings.telegram || {};
 	const notifyState = notifyData.state || {};
-	const autoTask = dataOf(pageResults.autoTask).state || {};
+	const autoTaskData = dataOf(pageResults.autoTask);
+	const autoTask = autoTaskData.state || {};
+	const scheduler = autoTaskData.scheduler || {};
 	const jobs = autoTask.jobs || {};
 	const subJob = jobs.subscriptions_refresh_auto || {};
 	const rulesJob = jobs.ruleset_download_required_auto || {};
 	const sourceCount = Array.isArray(subscriptions.sources) ? subscriptions.sources.length : 0;
 	const nodeCount = Number(snapshot.node_count || 0);
-	const missingRules = Number(rules.missing_count || 0) + Number(rules.missing_reference_count || 0) + Number(rules.invalid_count || 0);
-	const requiredRules = Number(rules.declared_count || 0);
+	const missingRules = Number(rules.missing_count || 0);
+	const requiredRules = Number(rules.required_count || 0);
+	const readyRules = Number(rules.ready_count || 0);
+	const extraRules = Number(rules.local_extra_count || 0);
 	const profileOk = pageResults.profile && pageResults.profile.ok && profile.valid !== false;
 	const profileSyncTime = profileSource.updated_at || _('\u672a\u8bb0\u5f55');
 	const profileSourceText = profileSource.url ? _('\u5df2\u914d\u7f6e\u8fdc\u7a0b\u6e90') : _('\u672a\u914d\u7f6e\u8fdc\u7a0b\u6e90');
 	const snapshotTime = snapshot.updated_at || _('\u672a\u5237\u65b0');
-	const subAutoText = autoJobText(subJob, _('\u81ea\u52a8\u5237\u65b0\u5df2\u505c\u7528'), _('\u7b49\u5f85\u81ea\u52a8\u5237\u65b0'));
+	const subUpdate = subscriptions.subscription_update || {};
+	const subScheduleWarning = schedulerWarning(scheduler, subUpdate.auto_update === true);
+	const subAutoText = subScheduleWarning || autoJobText(subJob, _('\u81ea\u52a8\u5237\u65b0\u5df2\u505c\u7528'), schedulerPlanText(true, subUpdate.update_hour));
 	const rulesTime = rulesJob.last_run_at || _('\u672a\u540c\u6b65');
-	const rulesResultText = rulesJob.last_message ? compactMessage(rulesJob.last_message) : autoJobText(rulesJob, _('\u81ea\u52a8\u540c\u6b65\u5df2\u505c\u7528'), _('\u7b49\u5f85\u81ea\u52a8\u540c\u6b65'));
+	const rulesScheduleWarning = schedulerWarning(scheduler, rulesPolicy.auto_update === true);
+	const rulesResultText = rulesScheduleWarning || (rulesJob.last_message ? compactMessage(rulesJob.last_message) : autoJobText(rulesJob, _('\u81ea\u52a8\u540c\u6b65\u5df2\u505c\u7528'), schedulerPlanText(true, rulesPolicy.update_hour)));
 	const rulesMode = rulesPolicy.mode || '-';
 	const panelUpdated = panelInstalled.updated_at || (panel.index_mtime ? _('mtime %s').format(panel.index_mtime) : _('\u672a\u66f4\u65b0'));
 	const panelVersion = panelInstalled.version || panelLastCheck.version || (panel.installed ? _('\u672a\u8bb0\u5f55\u7248\u672c') : _('\u8bf7\u5b89\u88c5\u9762\u677f\u8d44\u6e90'));
@@ -335,8 +383,8 @@ function resourceCards() {
 
 	return E('div', { 'style': 'display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: .75rem; margin-bottom: 1rem;' }, [
 		card(_('\u6a21\u677f'), profileOk ? _('\u5c31\u7eea') : _('\u9519\u8bef'), _('\u4e0a\u6b21\u540c\u6b65\uff1a%s | %s').format(profileSyncTime, profileSourceText), statusTone(profileOk)),
-		card(_('\u8ba2\u9605'), nodeCount ? _('%d \u4e2a\u8282\u70b9').format(nodeCount) : _('\u65e0\u8282\u70b9'), _('\u4e0a\u6b21\u5237\u65b0\uff1a%s | %s').format(snapshotTime, subAutoText), statusTone(sourceCount > 0 && nodeCount > 0, sourceCount > 0)),
-		card(_('\u89c4\u5219\u96c6'), missingRules === 0 ? _('\u5c31\u7eea') : _('\u9700\u8981\u5904\u7406'), _('\u4e0a\u6b21\u540c\u6b65\uff1a%s | \u9700\u8981 %d / \u7f3a\u5931 %d | %s | %s').format(rulesTime, requiredRules, missingRules, rulesMode, rulesResultText), statusTone(missingRules === 0, requiredRules > 0)),
+		card(_('\u8ba2\u9605'), nodeCount ? _('%d \u4e2a\u8282\u70b9').format(nodeCount) : _('\u65e0\u8282\u70b9'), _('\u4e0a\u6b21\u5237\u65b0\uff1a%s | %s').format(snapshotTime, subAutoText), subScheduleWarning ? '#ea580c' : statusTone(sourceCount > 0 && nodeCount > 0, sourceCount > 0)),
+		card(_('\u89c4\u5219\u96c6'), missingRules === 0 ? _('\u5c31\u7eea') : _('\u9700\u8981\u5904\u7406'), _('\u4e0a\u6b21\u540c\u6b65\uff1a%s | \u9700\u8981 %d / \u5df2\u5c31\u7eea %d / \u7f3a\u5931 %d / \u672c\u5730\u591a\u4f59 %d | %s | %s').format(rulesTime, requiredRules, readyRules, missingRules, extraRules, rulesMode, rulesResultText), rulesScheduleWarning ? '#ea580c' : statusTone(missingRules === 0 && requiredRules > 0, requiredRules > 0)),
 		card(_('\u9762\u677f'), panel.installed ? _('\u5df2\u5b89\u88c5') : _('\u7f3a\u5931'), _('\u4e0a\u6b21\u66f4\u65b0\uff1a%s | %s').format(panelUpdated, panelVersion), statusTone(panel.installed)),
 		card(_('Telegram'), notifyEnabled ? _('\u5df2\u542f\u7528') : _('\u5df2\u505c\u7528'), _('\u6700\u8fd1\u7ed3\u679c\uff1a%s | %s').format(notifyStatus, notifyResult), notifyAccent)
 	]);
@@ -371,7 +419,7 @@ function entryLinks() {
 		E('div', { 'style': 'display: flex; flex-wrap: wrap;' }, [
 			actionLink(_('\u6253\u5f00 Zashboard'), 'admin/services/shinra/panel', true),
 			actionLink(_('\u7ba1\u7406\u8d44\u6e90'), 'admin/services/shinra/resources'),
-			actionLink(_('\u7f51\u7edc\u8bca\u65ad'), 'admin/services/shinra/logs')
+			actionLink(_('\u7f51\u7edc\u8bca\u65ad'), 'admin/services/shinra/diagnostics')
 		])
 	]);
 }

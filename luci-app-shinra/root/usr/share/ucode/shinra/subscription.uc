@@ -11,6 +11,7 @@ import { acquire, release } from 'shinra.core.lock';
 import { read_text, write_text_atomic, parse_json_object, request_content, request_keys, json_escape, json_stringify, ExecResult, ExecSafe } from 'shinra.core.utils';
 import { validate_refresh_strategy, normalize_subscriptions_policy } from 'shinra.subscription_policy';
 import { send_telegram_best_effort } from 'shinra.notify';
+import { fetch_text } from 'shinra.resource_fetch';
 
 function validate_url(url) {
 	if (type(url) != "string" || url == "")
@@ -106,10 +107,10 @@ function source_result_json(name, url, strategy, ok, node_count, error) {
 }
 
 function fetch_substore_output(trace_id, url, strategy) {
-	if (strategy == "direct")
-		return ExecSafe(trace_id, [ BIN.TIMEOUT, "15", "wget", "-q", "-T", "10", "-Y", "off", "-O", "-", url ]);
-
-	return ExecSafe(trace_id, [ BIN.TIMEOUT, "15", "wget", "-q", "-T", "10", "-Y", "on", "-O", "-", url ]);
+	let fetched = fetch_text(trace_id, url, strategy, { timeout_sec: 10, min_bytes: 16 });
+	if (!fetched.ok)
+		die("fetch failed: " + fetched.error + " exit=" + fetched.exit_code + " stderr=" + fetched.stderr);
+	return fetched.body;
 }
 
 function trim_line(value) {
@@ -277,7 +278,7 @@ function preflight_for_url(trace_id, url) {
 
 	if (running && kind == "lan_ipv4" && (route_uses_tun || route_uses_table_2022)) {
 		risk = "tun_captures_lan_substore";
-		recommendation = "Stop Runtime before direct refresh, use proxy refresh, or configure LAN bypass.";
+		recommendation = "Generate and apply a Runtime config with TUN route_exclude_address for LAN/private ranges.";
 	}
 
 	return {
@@ -305,206 +306,12 @@ function preflight_detail(preflight) {
 		(preflight.recommendation != "" ? " recommendation=" + preflight.recommendation : "");
 }
 
-function list_has(list, value) {
-	for (let item in list) {
-		if (item == value)
-			return true;
-	}
-	return false;
-}
-
-function bypass_plan(fetch_bypass, preflight) {
-	let reason = "allowed";
-	let allowed = true;
-	let would_add_rule = false;
-
-	if (fetch_bypass.enabled != true) {
-		allowed = false;
-		reason = "disabled";
-	} else if (fetch_bypass.mode != "temporary_rule") {
-		allowed = false;
-		reason = "unsupported_mode";
-	} else if (preflight.target_kind != "lan_ipv4") {
-		allowed = false;
-		reason = "not_lan_ipv4";
-	} else if (fetch_bypass.allow_lan != true) {
-		allowed = false;
-		reason = "allow_lan_false";
-	} else if (!list_has(fetch_bypass.hosts, preflight.target_host)) {
-		allowed = false;
-		reason = "host_not_allowed";
-	} else if (!preflight.route_uses_tun && !preflight.route_uses_table_2022) {
-		allowed = false;
-		reason = "route_not_captured";
-	}
-
-	if (allowed)
-		would_add_rule = true;
-
-	return {
-		enabled: fetch_bypass.enabled == true,
-		allowed: allowed,
-		would_add_rule: would_add_rule,
-		reason: reason,
-		mode: fetch_bypass.mode,
-		host: preflight.target_host,
-		target_kind: preflight.target_kind,
-		priority: fetch_bypass.priority,
-		rule_argv: would_add_rule ? [ "ip", "rule", "add", "to", preflight.target_host, "lookup", "main", "priority", "" + fetch_bypass.priority ] : [],
-		cleanup_argv: would_add_rule ? [ "ip", "rule", "del", "to", preflight.target_host, "lookup", "main", "priority", "" + fetch_bypass.priority ] : []
-	};
-}
-
-function bypass_rule_command(action, plan) {
-	if (action == "add")
-		return [ "ip", "rule", "add", "to", plan.host, "lookup", "main", "priority", "" + plan.priority ];
-	return [ "ip", "rule", "del", "to", plan.host, "lookup", "main", "priority", "" + plan.priority ];
-}
-
-function bypass_rule_result(trace_id, argv) {
-	let result = ExecResult(trace_id, argv);
-	return {
-		code: result.code,
-		stdout: trim_line(result.stdout),
-		stderr: trim_line(result.stderr),
-		ok: result.code == 0
-	};
-}
-
-function bypass_cleanup(trace_id, plan) {
-	let result = bypass_rule_result(trace_id, bypass_rule_command("del", plan));
-	result.ok = result.ok || result.code == 2;
-	return result;
-}
-
-function bypass_add(trace_id, plan) {
-	return bypass_rule_result(trace_id, bypass_rule_command("add", plan));
-}
-
-function bypass_verify(trace_id, plan) {
-	let route = command_result(trace_id, [ "ip", "route", "get", plan.host ]);
-	route.route_uses_tun = route.ok && contains(route.stdout, " dev tun");
-	route.route_uses_table_2022 = route.ok && contains(route.stdout, "table 2022");
-	route.route_uses_main = route.ok && !route.route_uses_tun && !route.route_uses_table_2022;
-	route.ok = route.ok && route.route_uses_main;
-	return route;
-}
-
-function bypass_transaction_prepare(trace_id, plan) {
-	let report = {
-		enabled: plan.enabled,
-		attempted: false,
-		allowed: plan.allowed,
-		host: plan.host,
-		priority: plan.priority,
-		stage: "not_started",
-		cleanup_before: null,
-		add: null,
-		verify: null,
-		cleanup_after: null
-	};
-
-	if (!plan.allowed) {
-		report.stage = "denied";
-		return report;
-	}
-
-	report.attempted = true;
-	report.stage = "cleanup_before";
-	report.cleanup_before = bypass_cleanup(trace_id, plan);
-	if (!report.cleanup_before.ok)
-		return report;
-
-	report.stage = "add";
-	report.add = bypass_add(trace_id, plan);
-	if (!report.add.ok) {
-		report.cleanup_after = bypass_cleanup(trace_id, plan);
-		return report;
-	}
-
-	report.stage = "verify";
-	report.verify = bypass_verify(trace_id, plan);
-	if (!report.verify.ok) {
-		report.cleanup_after = bypass_cleanup(trace_id, plan);
-		return report;
-	}
-
-	report.stage = "ready";
-	return report;
-}
-
-function bypass_transaction_cleanup(trace_id, plan, report) {
-	if (report == null)
-		report = {};
-	report.cleanup_after = bypass_cleanup(trace_id, plan);
-	if (report.cleanup_after.ok)
-		report.stage = "cleaned";
-	else
-		report.stage = "cleanup_failed";
-	return report;
-}
-
-function bypass_report_detail(report) {
-	if (report == null)
-		return "bypass_report=none";
-	return "bypass_stage=" + (type(report.stage) == "string" ? report.stage : "") +
-		" cleanup_before=" + (report.cleanup_before != null && report.cleanup_before.ok ? "ok" : "not_ok") +
-		" add=" + (report.add != null && report.add.ok ? "ok" : "not_ok") +
-		" verify=" + (report.verify != null && report.verify.ok ? "ok" : "not_ok") +
-		" cleanup_after=" + (report.cleanup_after != null && report.cleanup_after.ok ? "ok" : "not_ok");
-}
-
 function fetch_substore_output_checked(trace_id, url, strategy) {
 	let preflight = preflight_for_url(trace_id, url);
-	let result = null;
-
-	if (strategy == "direct")
-		result = ExecResult(trace_id, [ BIN.TIMEOUT, "15", "wget", "-q", "-T", "10", "-Y", "off", "-O", "-", url ]);
-	else
-		result = ExecResult(trace_id, [ BIN.TIMEOUT, "15", "wget", "-q", "-T", "10", "-Y", "on", "-O", "-", url ]);
-
-	if (result.code != 0)
-		die("Command failed(" + result.code + "): " + result.stderr + "; " + preflight_detail(preflight));
-
-	return result.stdout;
-}
-
-function fetch_substore_output_bypass_aware(trace_id, url, strategy, fetch_bypass) {
-	let preflight = preflight_for_url(trace_id, url);
-	let plan = bypass_plan(fetch_bypass, preflight);
-	let bypass = {
-		plan: plan,
-		report: null,
-		used: false
-	};
-	let result = null;
-
-	if (strategy != "direct" || !plan.allowed) {
-		return {
-			content: fetch_substore_output_checked(trace_id, url, strategy),
-			bypass: bypass
-		};
-	}
-
-	bypass.used = true;
-	bypass.report = bypass_transaction_prepare(trace_id, plan);
-	if (bypass.report.stage != "ready") {
-		bypass_transaction_cleanup(trace_id, plan, bypass.report);
-		die("Subscription bypass prepare failed; " + bypass_report_detail(bypass.report));
-	}
-
-	result = ExecResult(trace_id, [ BIN.TIMEOUT, "15", "wget", "-q", "-T", "10", "-Y", "off", "-O", "-", url ]);
-	bypass_transaction_cleanup(trace_id, plan, bypass.report);
-
-	if (!bypass.report.cleanup_after.ok)
-		die("Subscription bypass cleanup failed; " + bypass_report_detail(bypass.report));
-	if (result.code != 0)
-		die("Command failed(" + result.code + "): " + result.stderr + "; " + preflight_detail(preflight) + "; " + bypass_report_detail(bypass.report));
-
-	return {
-		content: result.stdout,
-		bypass: bypass
-	};
+	let fetched = fetch_text(trace_id, url, strategy, { timeout_sec: 10, min_bytes: 16 });
+	if (!fetched.ok)
+		die("fetch failed: " + fetched.error + " exit=" + fetched.exit_code + " stderr=" + fetched.stderr + "; " + preflight_detail(preflight));
+	return fetched.body;
 }
 
 function source_arg(req, key) {
@@ -616,22 +423,20 @@ function subscription_test_source(trace_id, req) {
 		let name = source_arg(req, "name");
 		let url = source_arg(req, "url");
 		let strategy = source_arg(req, "strategy");
-		let config = validate_subscriptions_content(read_text(PATH.SUBSCRIPTIONS));
 
 		validate_url(url);
 		if (strategy == "")
 			strategy = "direct";
 		validate_refresh_strategy(strategy);
 
-		let fetched = fetch_substore_output_bypass_aware(trace_id, url, strategy, config.fetch_bypass);
-		let outbounds = substore_outbounds(fetched.content);
+		let content = fetch_substore_output_checked(trace_id, url, strategy);
+		let outbounds = substore_outbounds(content);
 		validate_outbounds(outbounds);
 
 		return Success({
 			name: name,
 			url: url,
 			refresh_strategy: strategy,
-			bypass: fetched.bypass,
 			node_count: length(outbounds),
 			nodes: node_preview(outbounds)
 		}, 200, trace_id, "Subscription source test passed");
@@ -644,9 +449,7 @@ function subscription_test_source(trace_id, req) {
 function subscription_fetch_preflight(trace_id, req) {
 	try {
 		let url = source_arg(req, "url");
-		let config = validate_subscriptions_content(read_text(PATH.SUBSCRIPTIONS));
 		let preflight = preflight_for_url(trace_id, url);
-		preflight.bypass_plan = bypass_plan(config.fetch_bypass, preflight);
 		return Success(preflight, 200, trace_id, "Subscription fetch preflight observed");
 	} catch (e) {
 		let err = "" + e;
@@ -668,7 +471,6 @@ function subscriptions_refresh(trace_id, req) {
 		let sources_json = "";
 		let outbounds_json = "";
 		let total = 0;
-		let bypass_used = 0;
 
 		for (let source in config.sources) {
 			if (source.enabled == false) {
@@ -678,10 +480,8 @@ function subscriptions_refresh(trace_id, req) {
 				continue;
 			}
 
-			let fetched = fetch_substore_output_bypass_aware(trace_id, source.url, strategy, config.fetch_bypass);
-			if (fetched.bypass.used)
-				bypass_used = bypass_used + 1;
-			let outbounds = substore_outbounds(fetched.content);
+			let content = fetch_substore_output_checked(trace_id, source.url, strategy);
+			let outbounds = substore_outbounds(content);
 			validate_outbounds(outbounds);
 			preserve_source_attribution(outbounds, source.name);
 			let fetched_outbounds = json_stringify(outbounds);
@@ -708,7 +508,7 @@ function subscriptions_refresh(trace_id, req) {
 		validate_node_snapshot_content(snapshot);
 		write_text_atomic(PATH.NODE_SNAPSHOT, snapshot);
 		release(lock);
-		return Success({ path: PATH.NODE_SNAPSHOT, node_count: total, refresh_strategy: strategy, bypass_used: bypass_used }, 200, trace_id, "Node Snapshot refreshed");
+		return Success({ path: PATH.NODE_SNAPSHOT, node_count: total, refresh_strategy: strategy }, 200, trace_id, "Node Snapshot refreshed");
 	} catch (e) {
 		if (lock != null)
 			release(lock);
@@ -781,7 +581,7 @@ function subscription_auto_message(result, status) {
 		"\nNodes: " + (data.node_count || 0) +
 		"\nSources: " + source_count +
 		"\nStrategy: " + (data.refresh_strategy || "-") +
-		"\nLAN bypass used: " + (data.bypass_used || 0);
+		"\nLAN/private routing: TUN route_exclude_address";
 }
 
 function subscriptions_refresh_auto(trace_id, req) {

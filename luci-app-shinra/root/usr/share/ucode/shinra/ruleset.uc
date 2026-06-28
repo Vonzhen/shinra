@@ -4,14 +4,15 @@
 
 'use strict';
 
-import { mkdir, rename, stat, unlink } from 'fs';
-import { PATH, BIN } from 'shinra.core.constants';
+import { mkdir, opendir, readfile, rename, stat, unlink } from 'fs';
+import { PATH } from 'shinra.core.constants';
 import { Success, Fail } from 'shinra.core.result';
 import { ERR } from 'shinra.core.error';
 import { acquire, release } from 'shinra.core.lock';
 import { normalize_subscriptions_policy } from 'shinra.subscription_policy';
-import { read_text, write_text_atomic, parse_json_object, request_content, request_keys, json_stringify, file_exists, ExecResult } from 'shinra.core.utils';
+import { read_text, write_text_atomic, parse_json_object, request_content, request_keys, json_stringify, file_exists } from 'shinra.core.utils';
 import { send_telegram_best_effort } from 'shinra.notify';
+import { fetch_file } from 'shinra.resource_fetch';
 
 function starts_with(value, prefix) {
 	value = "" + value;
@@ -155,6 +156,22 @@ function append_unique(list, value) {
 	}
 
 	push(list, value);
+}
+
+function ends_with(value, suffix) {
+	value = "" + value;
+	suffix = "" + suffix;
+	if (length(suffix) > length(value))
+		return false;
+	return substr(value, length(value) - length(suffix)) == suffix;
+}
+
+function dir_entry_name(entry) {
+	if (entry == null)
+		return "";
+	if (type(entry) == "object" && entry.name != null)
+		return "" + entry.name;
+	return "" + entry;
 }
 
 function redacted_url(url) {
@@ -487,14 +504,11 @@ function build_diagnostics(entries, references) {
 function ensure_rule_dirs() {
 	if (!file_exists(PATH.RULE_DIR) && !mkdir(PATH.RULE_DIR, 0700))
 		die("Failed to create " + PATH.RULE_DIR);
-
 	let tmp_dir = PATH.RUN_DIR + "/rules-tmp";
 	if (!file_exists(PATH.RUN_DIR) && !mkdir(PATH.RUN_DIR, 0700))
 		die("Failed to create " + PATH.RUN_DIR);
 	if (!file_exists(tmp_dir) && !mkdir(tmp_dir, 0700))
 		die("Failed to create " + tmp_dir);
-
-	return tmp_dir;
 }
 
 function rule_name_parts(tag) {
@@ -541,14 +555,15 @@ function ruleset_urls(entry, policy) {
 	return urls;
 }
 
-function direct_fetch_rule(trace_id, url, tmp_path) {
+function direct_fetch_rule(trace_id, url, tmp_path, strategy) {
 	unlink(tmp_path);
-	let result = ExecResult(trace_id, [ BIN.TIMEOUT, "20", "wget", "-q", "-T", "15", "-Y", "off", "-O", tmp_path, url ]);
-	if (result.code != 0) {
+	strategy = strategy == "proxy" ? "proxy" : "direct";
+	let result = fetch_file(trace_id, url, tmp_path, strategy, { timeout_sec: 15, min_bytes: 20 });
+	if (!result.ok) {
 		unlink(tmp_path);
 		return {
 			ok: false,
-			error: "Command failed(" + result.code + "): " + result.stderr
+			error: "fetch failed: strategy=" + strategy + " " + result.error + " exit=" + result.exit_code + " stderr=" + result.stderr
 		};
 	}
 
@@ -565,6 +580,12 @@ function direct_fetch_rule(trace_id, url, tmp_path) {
 		ok: true,
 		size: info.size || 0
 	};
+}
+
+function same_file_content(left_path, right_path) {
+	let left = readfile(left_path);
+	let right = readfile(right_path);
+	return left != null && right != null && left == right;
 }
 
 function atomic_swap_rule(tmp_path, final_path) {
@@ -620,9 +641,170 @@ function required_entries_from_profile() {
 	};
 }
 
+function local_rule_files() {
+	let files = {};
+	if (!file_exists(PATH.RULE_DIR))
+		return files;
+
+	let dir = opendir(PATH.RULE_DIR);
+	if (!dir)
+		return files;
+
+	for (let item = dir.read(); item != null; item = dir.read()) {
+		let name = dir_entry_name(item);
+		if (!ends_with(name, ".srs"))
+			continue;
+
+		let path = PATH.RULE_DIR + "/" + name;
+		let info = stat(path);
+		if (type(info) != "object" || info == null)
+			continue;
+		if (type(info.type) == "string" && info.type != "file")
+			continue;
+
+		let tag = substr(name, 0, length(name) - 4);
+		files[tag] = {
+			tag: tag,
+			path: path,
+			exists: true,
+			size: info.size || 0,
+			mtime: info.mtime || 0
+		};
+	}
+
+	dir.close();
+	return files;
+}
+
+function redacted_urls(urls) {
+	let result = [];
+	for (let url in urls)
+		push(result, redacted_url(url));
+	return result;
+}
+
+function ruleset_required_inventory(trace_id, req) {
+	try {
+		let required_info = required_entries_from_profile();
+		let required = required_info.entries;
+		let config = normalized_subscriptions_config();
+		let locals = local_rule_files();
+		let required_map = {};
+		let entries = [];
+		let diagnostics = [];
+		let ready = 0;
+		let missing = 0;
+
+		for (let entry in required) {
+			let tag = entry.tag;
+			let local_path = PATH.RULE_DIR + "/" + tag + ".srs";
+			let meta = file_metadata(local_path);
+			let status = meta.exists && meta.size > 0 ? "ready" : "missing";
+			let urls = ruleset_urls(entry, config.ruleset);
+			required_map[tag] = true;
+
+			if (status == "ready")
+				ready = ready + 1;
+			else {
+				missing = missing + 1;
+				push(diagnostics, {
+					level: "error",
+					code: "required_local_missing",
+					message: "Required local Rule Set is missing",
+					data: {
+						tag: tag,
+						path: local_path
+					}
+				});
+			}
+
+			push(entries, {
+				tag: tag,
+				required: true,
+				status: status,
+				local_path: local_path,
+				local_exists: meta.exists,
+				local_size: meta.size,
+				local_mtime: meta.mtime,
+				source_url: entry.source_url,
+				source_url_redacted: redacted_url(entry.source_url),
+				candidate_urls: urls,
+				candidate_url_redacted: redacted_urls(urls),
+				referenced_count: entry.referenced_count,
+				reference_scopes: entry.reference_scopes,
+				reference_indexes: entry.reference_indexes,
+				referenced_by: entry.referenced_by
+			});
+		}
+
+		let extras = [];
+		let local_count = 0;
+		for (let tag in locals) {
+			local_count = local_count + 1;
+			if (required_map[tag])
+				continue;
+			let item = locals[tag];
+			push(extras, {
+				tag: tag,
+				required: false,
+				status: "extra",
+				local_path: item.path,
+				local_exists: true,
+				local_size: item.size,
+				local_mtime: item.mtime
+			});
+		}
+
+		return Success({
+			source: "profile",
+			profile_path: PATH.PROFILE,
+			rule_dir: PATH.RULE_DIR,
+			mode: config.ruleset.mode,
+			fetch_strategy: config.ruleset.fetch_strategy,
+			summary: {
+				required_count: length(required),
+				ready_count: ready,
+				missing_count: missing,
+				local_count: local_count,
+				local_extra_count: length(extras)
+			},
+			entries: entries,
+			extras: extras,
+			references: required_info.references,
+			diagnostics: diagnostics
+		}, 200, trace_id, "Required Rule Set inventory loaded");
+	} catch (e) {
+		let err = "" + e;
+		return Fail(ERR.E_RULESET_INVENTORY_FAILED, "Failed to load Required Rule Set inventory", trace_id, err);
+	}
+}
+
 function ruleset_inventory(trace_id, req) {
 	try {
 		let selected = select_source(req);
+		if (!selected.exists) {
+			return Success({
+				source_requested: selected.requested,
+				source_used: selected.source,
+				path: selected.path,
+				source_exists: false,
+				summary: summary([], []),
+				entries: [],
+				references: [],
+				diagnostics: [
+					{
+						level: "info",
+						code: "source_missing",
+						message: "Rule Set inventory source does not exist yet",
+						data: {
+							source: selected.source,
+							path: selected.path
+						}
+					}
+				]
+			}, 200, trace_id, "Rule Set inventory source missing");
+		}
+
 		let config = parse_json_object(read_text(selected.path), "Rule Set inventory source");
 		let entries = collect_declarations(config);
 		let refs = collect_references(config, declaration_map(entries));
@@ -684,32 +866,93 @@ function ruleset_policy_save(trace_id, req) {
 	}
 }
 
+function default_ruleset_job_state() {
+	return {
+		schema_version: 1,
+		jobs: {
+			ruleset_download_required: {
+				task_type: "ruleset_download_required",
+				status: "",
+				started_at: "",
+				finished_at: "",
+				message: "",
+				required_count: 0,
+				completed_count: 0,
+				updated_count: 0,
+				unchanged_count: 0,
+				failed_count: 0,
+				checked_count: 0,
+				current_tag: "",
+				current_url_redacted: "",
+				last_error: "",
+				fetch_strategy: "",
+				trace_id: ""
+			}
+		}
+	};
+}
+
+function read_ruleset_job_state() {
+	if (!file_exists(PATH.JOB_STATE))
+		return default_ruleset_job_state();
+
+	let state = parse_json_object(read_text(PATH.JOB_STATE), "Job State");
+	if (type(state.jobs) != "object" || state.jobs == null || type(state.jobs) == "array")
+		state.jobs = {};
+	if (type(state.jobs.ruleset_download_required) != "object" || state.jobs.ruleset_download_required == null || type(state.jobs.ruleset_download_required) == "array")
+		state.jobs.ruleset_download_required = default_ruleset_job_state().jobs.ruleset_download_required;
+	state.schema_version = 1;
+	return state;
+}
+
+function write_ruleset_job_progress(trace_id, patch) {
+	try {
+		if (trace_id != "shinra-ruleset-sync-job")
+			return;
+		let state = read_ruleset_job_state();
+		let job = state.jobs.ruleset_download_required;
+		for (let key in patch)
+			job[key] = patch[key];
+		write_text_atomic(PATH.JOB_STATE, json_stringify(state) + "\n");
+	} catch (e) {
+		/* Progress must never fail the actual sync. */
+	}
+}
+
 function ruleset_download_required(trace_id, req) {
 	let lock = null;
 	try {
-		let tmp_dir = ensure_rule_dirs();
+		ensure_rule_dirs();
 		let config = normalized_subscriptions_config();
+		let strategy = config.ruleset.fetch_strategy == "proxy" ? "proxy" : "direct";
 		let required = required_entries_from_profile().entries;
 		let updated = [];
 		let unchanged = [];
 		let failed = [];
 		let attempts = [];
+		let checked = [];
+		let tmp_dir = PATH.RUN_DIR + "/rules-tmp";
 
 		lock = acquire(trace_id);
+		write_ruleset_job_progress(trace_id, {
+			status: "running",
+			message: "Rule Set sync running",
+			required_count: length(required),
+			completed_count: 0,
+			updated_count: 0,
+			unchanged_count: 0,
+			failed_count: 0,
+			checked_count: 0,
+			current_tag: "",
+			current_url_redacted: "",
+			last_error: "",
+			fetch_strategy: strategy,
+			trace_id: trace_id
+		});
 
 		for (let entry in required) {
 			let final_path = PATH.RULE_DIR + "/" + entry.tag + ".srs";
 			let meta = file_metadata(final_path);
-
-			if (meta.exists && meta.size > 0) {
-				push(unchanged, {
-					tag: entry.tag,
-					path: final_path,
-					size: meta.size
-				});
-				continue;
-			}
-
 			let urls = ruleset_urls(entry, config.ruleset);
 			let tmp_path = tmp_dir + "/" + entry.tag + ".srs.tmp";
 			let downloaded = false;
@@ -717,11 +960,32 @@ function ruleset_download_required(trace_id, req) {
 			let used_url = "";
 			let downloaded_size = 0;
 
+			write_ruleset_job_progress(trace_id, {
+				status: "running",
+				message: "Rule Set sync running",
+				required_count: length(required),
+				completed_count: length(updated) + length(unchanged) + length(failed),
+				updated_count: length(updated),
+				unchanged_count: length(unchanged),
+				failed_count: length(failed),
+				checked_count: length(checked),
+				current_tag: entry.tag,
+				current_url_redacted: length(urls) ? redacted_url(urls[0]) : "",
+				last_error: "",
+				fetch_strategy: strategy
+			});
+
 			for (let url in urls) {
-				let fetch = direct_fetch_rule(trace_id, url, tmp_path);
+				write_ruleset_job_progress(trace_id, {
+					current_tag: entry.tag,
+					current_url_redacted: redacted_url(url)
+				});
+				let fetch = direct_fetch_rule(trace_id, url, tmp_path, strategy);
 				push(attempts, {
 					tag: entry.tag,
 					url_redacted: redacted_url(url),
+					fetch_strategy: strategy,
+					method: "get",
 					ok: fetch.ok == true,
 					error: fetch.ok == true ? "" : fetch.error
 				});
@@ -740,6 +1004,38 @@ function ruleset_download_required(trace_id, req) {
 					path: final_path,
 					error: last_error || "No downloadable URL succeeded"
 				});
+				write_ruleset_job_progress(trace_id, {
+					completed_count: length(updated) + length(unchanged) + length(failed),
+					updated_count: length(updated),
+					unchanged_count: length(unchanged),
+					failed_count: length(failed),
+					checked_count: length(checked),
+					current_tag: entry.tag,
+					last_error: last_error || "No downloadable URL succeeded"
+				});
+				continue;
+			}
+
+			if (meta.exists && meta.size > 0 && same_file_content(tmp_path, final_path)) {
+				unlink(tmp_path);
+				push(unchanged, {
+					tag: entry.tag,
+					path: final_path,
+					size: meta.size,
+					url_redacted: redacted_url(used_url),
+					checked_download: true
+				});
+				push(checked, entry.tag);
+				write_ruleset_job_progress(trace_id, {
+					completed_count: length(updated) + length(unchanged) + length(failed),
+					updated_count: length(updated),
+					unchanged_count: length(unchanged),
+					failed_count: length(failed),
+					checked_count: length(checked),
+					current_tag: entry.tag,
+					current_url_redacted: redacted_url(used_url),
+					last_error: ""
+				});
 				continue;
 			}
 
@@ -751,18 +1047,44 @@ function ruleset_download_required(trace_id, req) {
 				url_redacted: redacted_url(used_url),
 				backup_created: swap.backup_created == true
 			});
+			write_ruleset_job_progress(trace_id, {
+				completed_count: length(updated) + length(unchanged) + length(failed),
+				updated_count: length(updated),
+				unchanged_count: length(unchanged),
+				failed_count: length(failed),
+				checked_count: length(checked),
+				current_tag: entry.tag,
+				current_url_redacted: redacted_url(used_url),
+				last_error: ""
+			});
 		}
 
 		release(lock);
+		write_ruleset_job_progress(trace_id, {
+			status: length(failed) ? "partial" : "success",
+			message: "Required Rule Sets downloaded",
+			completed_count: length(required),
+			updated_count: length(updated),
+			unchanged_count: length(unchanged),
+			failed_count: length(failed),
+			checked_count: length(checked),
+			current_tag: "",
+			current_url_redacted: "",
+			last_error: length(failed) ? failed[length(failed) - 1].error : ""
+		});
 		return Success({
 			required_count: length(required),
 			updated_count: length(updated),
 			unchanged_count: length(unchanged),
 			failed_count: length(failed),
+			checked_count: length(checked),
 			rule_dir: PATH.RULE_DIR,
+			tmp_dir: tmp_dir,
 			mode: config.ruleset.mode,
+			fetch_strategy: strategy,
 			updated: updated,
 			unchanged: unchanged,
+			checked: checked,
 			failed: failed,
 			attempts: attempts
 		}, 200, trace_id, "Required Rule Sets downloaded");
@@ -773,7 +1095,6 @@ function ruleset_download_required(trace_id, req) {
 		return Fail(ERR.E_RULESET_DOWNLOAD_FAILED, "Failed to download required Rule Sets", trace_id, err);
 	}
 }
-
 function notification_meta(result) {
 	if (result == null)
 		return {
@@ -850,8 +1171,68 @@ function ruleset_auto_message(result, status) {
 		"\nUnchanged: " + (data.unchanged_count || 0) +
 		"\nFailed: " + (data.failed_count || 0);
 	if (length(tags))
-		message = message + "\nFailed rules: " + join_tags(tags);
+		message = message + "\nFailed Rule Sets: " + join_tags(tags);
 	return message;
+}
+
+function ruleset_download_required_status(trace_id, req) {
+	try {
+		return Success({
+			path: PATH.JOB_STATE,
+			exists: file_exists(PATH.JOB_STATE),
+			state: read_ruleset_job_state()
+		}, 200, trace_id, "Rule Set sync job status loaded");
+	} catch (e) {
+		let err = "" + e;
+		return Fail(ERR.E_RULESET_DOWNLOAD_FAILED, "Failed to load Rule Set sync job status", trace_id, err);
+	}
+}
+
+function ruleset_download_required_start(trace_id, req) {
+	try {
+		if (!file_exists(PATH.RUN_DIR) && !mkdir(PATH.RUN_DIR, 0700))
+			die("Failed to create Run directory: " + PATH.RUN_DIR);
+		let lock_info = stat(PATH.RUN_DIR + "/ruleset-sync.lock");
+		let state = read_ruleset_job_state();
+		let job = state.jobs.ruleset_download_required;
+		if (type(lock_info) == "object" && lock_info != null && (job.status == "running" || job.status == "starting")) {
+			return Success({
+				path: PATH.JOB_STATE,
+				state: state,
+				started: false,
+				reason: "already_running"
+			}, 200, trace_id, "Rule Set sync job is already running");
+		}
+
+		job.status = "starting";
+		job.started_at = "";
+		job.finished_at = "";
+		job.message = "Rule Set sync queued";
+		job.required_count = 0;
+		job.completed_count = 0;
+		job.updated_count = 0;
+		job.unchanged_count = 0;
+		job.failed_count = 0;
+		job.current_tag = "";
+		job.current_url_redacted = "";
+		job.last_error = "";
+		job.fetch_strategy = "";
+		job.trace_id = trace_id;
+		write_text_atomic(PATH.JOB_STATE, json_stringify(state) + "\n");
+
+		let code = system("/usr/libexec/shinra-ruleset-sync-job >/dev/null 2>&1 &");
+		if (code != 0)
+			die("Failed to start /usr/libexec/shinra-ruleset-sync-job: " + code);
+
+		return Success({
+			path: PATH.JOB_STATE,
+			state: state,
+			started: true
+		}, 202, trace_id, "Rule Set sync job started");
+	} catch (e) {
+		let err = "" + e;
+		return Fail(ERR.E_RULESET_DOWNLOAD_FAILED, "Failed to start Rule Set sync job", trace_id, err);
+	}
 }
 
 function ruleset_download_required_auto(trace_id, req) {
@@ -862,4 +1243,5 @@ function ruleset_download_required_auto(trace_id, req) {
 	return append_notification(result, notification_meta(notify));
 }
 
-export { ruleset_inventory, ruleset_policy_get, ruleset_policy_save, ruleset_download_required, ruleset_download_required_auto };
+export { ruleset_inventory, ruleset_required_inventory, ruleset_policy_get, ruleset_policy_save, ruleset_download_required, ruleset_download_required_auto, ruleset_download_required_start, ruleset_download_required_status };
+

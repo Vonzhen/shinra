@@ -1,0 +1,18 @@
+#!/bin/sh
+
+set -eu
+
+CRON_FILE="/etc/crontabs/root"
+ENTRY="5 * * * * /usr/libexec/shinra-auto-task >/dev/null 2>&1"
+
+install -d -m 0755 /etc/crontabs
+touch "$CRON_FILE"
+
+if ! grep -Fq '/usr/libexec/shinra-auto-task' "$CRON_FILE"; then
+	printf '%s\n' "$ENTRY" >> "$CRON_FILE"
+fi
+
+/etc/init.d/cron enable 2>/dev/null || true
+/etc/init.d/cron restart 2>/dev/null || true
+
+exit 0

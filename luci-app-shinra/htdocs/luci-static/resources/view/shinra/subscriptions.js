@@ -50,14 +50,6 @@ const DEFAULT_URLTEST_PARAMS = {
 	tolerance: 150
 };
 
-const DEFAULT_FETCH_BYPASS = {
-	enabled: false,
-	mode: 'temporary_rule',
-	allow_lan: true,
-	hosts: [],
-	priority: 8000
-};
-
 const DEFAULT_RULESET_POLICY = {
 	mode: 'auto',
 	auto_update: false,
@@ -119,25 +111,9 @@ function normalizePolicy(raw) {
 			interval: policy.urltest_params && policy.urltest_params.interval || DEFAULT_URLTEST_PARAMS.interval,
 			tolerance: policy.urltest_params && policy.urltest_params.tolerance != null ? Number(policy.urltest_params.tolerance) : DEFAULT_URLTEST_PARAMS.tolerance
 		},
-		fetch_bypass: normalizeFetchBypass(policy.fetch_bypass),
 		subscription_update: normalizeSubscriptionUpdate(policy.subscription_update),
 		ruleset: normalizeRulesetPolicy(policy.ruleset),
 		sources: sources
-	};
-}
-
-function normalizeFetchBypass(raw) {
-	raw = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
-	let hosts = Array.isArray(raw.hosts) ? raw.hosts.filter(function(host) {
-		return typeof host === 'string' && host !== '';
-	}) : [];
-
-	return {
-		enabled: raw.enabled === true,
-		mode: raw.mode || DEFAULT_FETCH_BYPASS.mode,
-		allow_lan: raw.allow_lan === false ? false : true,
-		hosts: hosts,
-		priority: raw.priority != null ? Number(raw.priority) : DEFAULT_FETCH_BYPASS.priority
 	};
 }
 
@@ -223,8 +199,7 @@ function setTestReport(target, result) {
 	let data = result && result.data ? result.data : {};
 	let detail = result && (result.detail || result.message || result.code) || '';
 	let nodes = data.nodes && Array.isArray(data.nodes) ? data.nodes : [];
-	let bypass = data.bypass || {};
-	let bypassText = bypass.used ? _(' LAN bypass used and cleaned.') : bypass.plan && bypass.plan.enabled ? _(' LAN bypass not used: ') + (bypass.plan.reason || '-') : '';
+	let bypassText = '';
 
 	node.style.display = 'block';
 	node.style.borderColor = pending ? '#bfdbfe' : ok ? '#bbf7d0' : '#fecaca';
@@ -406,7 +381,7 @@ function policySettings(policy) {
 				'style': 'width: 100%; min-height: 4rem; font-family: monospace;',
 				'spellcheck': 'false'
 			}, [ policy.banned_keywords || '' ])),
-			field(_('UrlTest URL'), E('input', {
+			field(_('测速地址'), E('input', {
 				'id': 'shinra-urltest-url',
 				'class': 'cbi-input-text',
 				'style': 'width: 100%;',
@@ -740,7 +715,7 @@ function snapshotSummary(summary) {
 function snapshotDetails(summary) {
 	return collapsible(
 		_('节点快照'),
-		_('%d nodes, %d sources, updated %s').format(summary && summary.node_count || 0, summary && summary.source_count || 0, summary && summary.updated_at || '-'),
+	_('%d 个节点，%d 个订阅源，更新于 %s').format(summary && summary.node_count || 0, summary && summary.source_count || 0, summary && summary.updated_at || '-'),
 		snapshotSummary(summary),
 		false
 	);
@@ -765,17 +740,7 @@ function collectPolicyFromPage() {
 		interval: getValue('shinra-urltest-interval') || DEFAULT_URLTEST_PARAMS.interval,
 		tolerance: Number(getValue('shinra-urltest-tolerance') || DEFAULT_URLTEST_PARAMS.tolerance)
 	};
-	policy.fetch_bypass = normalizeFetchBypass({
-		enabled: checked('shinra-fetch-bypass-enabled'),
-		mode: getValue('shinra-fetch-bypass-mode') || DEFAULT_FETCH_BYPASS.mode,
-		allow_lan: checked('shinra-fetch-bypass-allow-lan'),
-		hosts: getValue('shinra-fetch-bypass-hosts').split(/[\n,]/).map(function(host) {
-			return host.trim();
-		}).filter(function(host) {
-			return host !== '';
-		}),
-		priority: Number(getValue('shinra-fetch-bypass-priority') || DEFAULT_FETCH_BYPASS.priority)
-	});
+	delete policy.fetch_bypass;
 	policy.subscription_update = normalizeSubscriptionUpdate({
 		auto_update: checked('shinra-subscription-auto-update'),
 		update_hour: Number(getValue('shinra-subscription-update-hour') || DEFAULT_SUBSCRIPTION_UPDATE.update_hour),
@@ -923,7 +888,6 @@ return view.extend({
 				renderMain(policy, summary, null),
 				subscriptionUpdateDetails(policy),
 				policyDetails(policy),
-				fetchSafetyDetails(policy),
 				snapshotDetails(summary)
 			])
 		]);
@@ -955,7 +919,7 @@ return view.extend({
 				return;
 			}
 
-			setStatus(_('节点快照已刷新：%d 个节点，策略 %s，局域网绕行 %d 次。准备使用这些节点时，请生成候选配置。').format(result.data && result.data.node_count || 0, result.data && result.data.refresh_strategy || 'direct', result.data && result.data.bypass_used || 0), true);
+			setStatus(_('节点快照已刷新：%d 个节点，策略 %s。准备使用新节点时，请生成候选配置。').format(result.data && result.data.node_count || 0, result.data && result.data.refresh_strategy || 'direct'), true);
 			return callNodeSnapshotSummary().then(function(summary) {
 				if (summary && summary.ok && summary.data)
 					updateSummary(summary.data);

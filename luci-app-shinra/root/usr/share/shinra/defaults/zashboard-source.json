@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "url": "",
+  "fetch_strategy": "direct",
   "repository": {
     "type": "github",
     "owner": "Zephyruso",

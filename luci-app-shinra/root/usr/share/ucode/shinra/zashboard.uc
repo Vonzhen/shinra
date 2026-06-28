@@ -7,13 +7,16 @@
 import { stat } from 'fs';
 import { Success, Fail } from 'shinra.core.result';
 import { ERR } from 'shinra.core.error';
-import { PATH, BIN } from 'shinra.core.constants';
+import { PATH } from 'shinra.core.constants';
 import { read_optional_text, write_text_atomic, parse_json_object, request_content, request_keys, json_stringify, file_exists, ExecSafe } from 'shinra.core.utils';
+import { fetch_text, fetch_file } from 'shinra.resource_fetch';
+import { validate_fetch_strategy } from 'shinra.subscription_policy';
 
 function default_zashboard_source() {
 	return {
 		schema_version: 1,
 		url: "",
+		fetch_strategy: "direct",
 		repository: {
 			type: "github",
 			owner: "Zephyruso",
@@ -165,12 +168,15 @@ function normalize_zashboard_source(source) {
 		die("Zashboard source root must be a JSON object");
 
 	let url = type(source.url) == "string" ? source.url : "";
+	let fetch_strategy = type(source.fetch_strategy) == "string" && source.fetch_strategy != "" ? source.fetch_strategy : "direct";
 	if (length(url) && !valid_url(url))
 		die("Zashboard URL must start with http:// or https://");
+	validate_fetch_strategy(fetch_strategy, "zashboard_source.fetch_strategy");
 
 	return {
 		schema_version: 1,
 		url: url,
+		fetch_strategy: fetch_strategy,
 		repository: normalize_repository(source.repository),
 		installed: normalize_installed(source.installed, source),
 		last_check: normalize_last_check(source.last_check),
@@ -261,7 +267,15 @@ function release_asset(release, pattern) {
 function check_latest_release(trace_id, source) {
 	let repository = normalize_repository(source.repository);
 	let api_url = github_latest_api_url(repository);
-	let content = ExecSafe(trace_id, [ BIN.TIMEOUT, "60", "wget", "-q", "-T", "30", "-Y", "off", "--header", "Accept: application/vnd.github+json", "-O", "-", proxied_url(api_url, repository) ]);
+	let strategy = source.fetch_strategy == "proxy" ? "proxy" : "direct";
+	let fetched = fetch_text(trace_id, proxied_url(api_url, repository), strategy, {
+		timeout_sec: 30,
+		min_bytes: 16,
+		headers: [ "Accept: application/vnd.github+json" ]
+	});
+	if (!fetched.ok)
+		die("fetch failed: strategy=" + strategy + " " + fetched.error + " exit=" + fetched.exit_code + " stderr=" + fetched.stderr);
+	let content = fetched.body;
 	let release = parse_json_object(content, "Zashboard GitHub release");
 	let version = type(release.tag_name) == "string" && length(release.tag_name) ? release.tag_name : "";
 	if (!length(version))
@@ -275,11 +289,12 @@ function check_latest_release(trace_id, source) {
 		download_url: proxied_url(asset.url, repository),
 		checked_at: now_utc(trace_id),
 		result: "ok",
-		update_available: source.installed.version != version
+		update_available: source.installed.version != version,
+		fetch_strategy: strategy
 	};
 }
 
-function install_archive_url(trace_id, url) {
+function install_archive_url(trace_id, url, strategy) {
 	let safe_trace = replace("" + trace_id, "/", "_");
 	let work_dir = "/tmp/shinra-zashboard-" + safe_trace;
 	let archive = work_dir + "/zashboard.zip";
@@ -289,7 +304,10 @@ function install_archive_url(trace_id, url) {
 
 	ExecSafe(trace_id, [ "rm", "-rf", work_dir ]);
 	ExecSafe(trace_id, [ "mkdir", "-p", unpack_dir ]);
-	ExecSafe(trace_id, [ BIN.TIMEOUT, "60", "wget", "-q", "-T", "30", "-Y", "off", "-O", archive, url ]);
+	strategy = strategy == "proxy" ? "proxy" : "direct";
+	let fetched = fetch_file(trace_id, url, archive, strategy, { timeout_sec: 30, min_bytes: 16 });
+	if (!fetched.ok)
+		die("fetch failed: strategy=" + strategy + " " + fetched.error + " exit=" + fetched.exit_code + " stderr=" + fetched.stderr);
 	ExecSafe(trace_id, [ "unzip", "-q", archive, "-d", unpack_dir ]);
 
 	let candidates = [
@@ -388,7 +406,7 @@ function zashboard_update_apply(trace_id, req) {
 	try {
 		let source = read_zashboard_source();
 		source.last_check = check_latest_release(trace_id, source);
-		install_archive_url(trace_id, source.last_check.download_url);
+		install_archive_url(trace_id, source.last_check.download_url, source.fetch_strategy);
 		source.installed.version = source.last_check.version;
 		source.installed.updated_at = now_utc(trace_id);
 		source.last_check.result = "updated";
@@ -410,7 +428,7 @@ function zashboard_sync_remote(trace_id, req) {
 		if (!valid_url(source.url))
 			die("Zashboard URL must start with http:// or https://");
 
-		install_archive_url(trace_id, source.url);
+		install_archive_url(trace_id, source.url, source.fetch_strategy);
 		source.installed.updated_at = now_utc(trace_id);
 		write_text_atomic(PATH.ZASHBOARD_SOURCE, zashboard_source_content(source));
 

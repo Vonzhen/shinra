@@ -37,19 +37,10 @@ function default_urltest_params() {
 	};
 }
 
-function default_fetch_bypass() {
-	return {
-		enabled: false,
-		mode: "temporary_rule",
-		allow_lan: true,
-		hosts: [],
-		priority: 8000
-	};
-}
-
 function default_ruleset_policy() {
 	return {
 		mode: "auto",
+		fetch_strategy: "direct",
 		auto_update: false,
 		update_hour: 4,
 		repositories: {
@@ -71,6 +62,11 @@ function default_subscription_update_policy() {
 function validate_refresh_strategy(strategy) {
 	if (strategy != "direct" && strategy != "proxy")
 		die("refresh_strategy must be direct or proxy");
+}
+
+function validate_fetch_strategy(strategy, label) {
+	if (strategy != "direct" && strategy != "proxy")
+		die(label + " must be direct or proxy");
 }
 
 function validate_subscription_update_strategy(strategy) {
@@ -268,42 +264,6 @@ function normalize_urltest_params(raw) {
 	return result;
 }
 
-function normalize_fetch_bypass(raw) {
-	let defaults = default_fetch_bypass();
-	let result = {
-		enabled: defaults.enabled,
-		mode: defaults.mode,
-		allow_lan: defaults.allow_lan,
-		hosts: [],
-		priority: defaults.priority
-	};
-
-	if (type(raw) == "object" && raw != null && type(raw) != "array") {
-		result.enabled = raw.enabled == true ? true : false;
-		if (type(raw.mode) == "string" && raw.mode != "")
-			result.mode = raw.mode;
-		result.allow_lan = raw.allow_lan == false ? false : true;
-		if (type(raw.priority) == "int")
-			result.priority = raw.priority;
-		if (type(raw.hosts) == "array") {
-			for (let host in raw.hosts) {
-				if (type(host) != "string" || host == "")
-					die("fetch_bypass.hosts must contain non-empty strings");
-				if (!is_lan_ipv4(host))
-					die("fetch_bypass.hosts only supports LAN IPv4 hosts");
-				append_unique(result.hosts, host);
-			}
-		}
-	}
-
-	if (result.mode != "temporary_rule")
-		die("fetch_bypass.mode must be temporary_rule");
-	if (result.priority < 7800 || result.priority > 8099)
-		die("fetch_bypass.priority must be between 7800 and 8099");
-
-	return result;
-}
-
 function normalize_repository_url(url, label, allow_empty) {
 	if (type(url) != "string" || url == "") {
 		if (allow_empty)
@@ -321,6 +281,7 @@ function normalize_ruleset_policy(raw) {
 	let defaults = default_ruleset_policy();
 	let result = {
 		mode: defaults.mode,
+		fetch_strategy: defaults.fetch_strategy,
 		auto_update: defaults.auto_update,
 		update_hour: defaults.update_hour,
 		repositories: {
@@ -332,6 +293,8 @@ function normalize_ruleset_policy(raw) {
 	if (type(raw) == "object" && raw != null && type(raw) != "array") {
 		if (type(raw.mode) == "string" && raw.mode != "")
 			result.mode = raw.mode;
+		if (type(raw.fetch_strategy) == "string" && raw.fetch_strategy != "")
+			result.fetch_strategy = raw.fetch_strategy;
 		result.auto_update = raw.auto_update == true ? true : false;
 		if (type(raw.update_hour) == "int")
 			result.update_hour = raw.update_hour;
@@ -344,6 +307,7 @@ function normalize_ruleset_policy(raw) {
 	}
 
 	validate_ruleset_mode(result.mode);
+	validate_fetch_strategy(result.fetch_strategy, "ruleset.fetch_strategy");
 	if (result.update_hour < 0 || result.update_hour > 23)
 		die("ruleset.update_hour must be between 0 and 23");
 
@@ -433,12 +397,11 @@ function normalize_subscriptions_policy(config) {
 		region_keys: regions,
 		banned_keywords: type(config.banned_keywords) == "string" && config.banned_keywords != "" ? config.banned_keywords : default_banned_keywords(),
 		urltest_params: normalize_urltest_params(config.urltest_params),
-		fetch_bypass: normalize_fetch_bypass(config.fetch_bypass),
 		subscription_update: normalize_subscription_update_policy(config.subscription_update),
 		ruleset: normalize_ruleset_policy(config.ruleset),
 		sources: sources
 	};
 }
 
-export { default_region_keywords, default_banned_keywords, default_urltest_params, default_fetch_bypass, default_ruleset_policy, default_subscription_update_policy, validate_refresh_strategy, normalize_subscriptions_policy };
+export { default_region_keywords, default_banned_keywords, default_urltest_params, default_ruleset_policy, default_subscription_update_policy, validate_refresh_strategy, validate_fetch_strategy, normalize_subscriptions_policy };
 

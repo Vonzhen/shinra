@@ -4,10 +4,11 @@
 
 'use strict';
 
+import { stat } from 'fs';
 import { Success, Fail } from 'shinra.core.result';
 import { ERR } from 'shinra.core.error';
-import { PATH } from 'shinra.core.constants';
-import { read_optional_text, parse_json_object } from 'shinra.core.utils';
+import { PATH, AUTO_TASK } from 'shinra.core.constants';
+import { read_optional_text, parse_json_object, ExecResult } from 'shinra.core.utils';
 
 function empty_job(enabled) {
 	return {
@@ -73,6 +74,48 @@ function empty_state() {
 	});
 }
 
+function executable(info) {
+	if (type(info) != "object" || info == null)
+		return false;
+	return (int(info.mode || 0) & 0111) != 0;
+}
+
+function cron_running(trace_id) {
+	let result = ExecResult(trace_id + "-cron", [ "/etc/init.d/cron", "status" ]);
+	return {
+		running: result.code == 0,
+		code: result.code,
+		stdout: result.stdout || "",
+		stderr: result.stderr || ""
+	};
+}
+
+function scheduler_status(trace_id) {
+	let script_info = stat(PATH.AUTO_TASK_SCRIPT);
+	let cron_info = stat(PATH.CRON_ROOT);
+	let cron_content = read_optional_text(PATH.CRON_ROOT);
+	let cron = cron_running(trace_id);
+	let script_exists = type(script_info) == "object" && script_info != null;
+	let script_executable = executable(script_info);
+	let cron_file_exists = type(cron_info) == "object" && cron_info != null;
+	let cron_installed = index(cron_content, PATH.AUTO_TASK_SCRIPT) >= 0;
+
+	return {
+		script_path: PATH.AUTO_TASK_SCRIPT,
+		script_exists: script_exists,
+		script_executable: script_executable,
+		cron_file: PATH.CRON_ROOT,
+		cron_file_exists: cron_file_exists,
+		cron_installed: cron_installed,
+		cron_running: cron.running,
+		cron_status_code: cron.code,
+		cron_status_stdout: cron.stdout,
+		cron_status_stderr: cron.stderr,
+		cron_entry: AUTO_TASK.CRON_ENTRY,
+		healthy: script_exists && script_executable && cron_installed && cron.running
+	};
+}
+
 function auto_task_status_get(trace_id, req) {
 	try {
 		let content = read_optional_text(PATH.AUTO_TASK_STATE);
@@ -82,7 +125,8 @@ function auto_task_status_get(trace_id, req) {
 		return Success({
 			path: PATH.AUTO_TASK_STATE,
 			exists: exists,
-			state: state
+			state: state,
+			scheduler: scheduler_status(trace_id)
 		}, 200, trace_id, "Auto Task status loaded");
 	} catch (e) {
 		let err = "" + e;

@@ -6,8 +6,10 @@
 
 import { Success, Fail } from 'shinra.core.result';
 import { ERR } from 'shinra.core.error';
-import { PATH, BIN } from 'shinra.core.constants';
+import { PATH } from 'shinra.core.constants';
 import { read_optional_text, write_text_atomic, write_runtime_text_atomic, parse_json_object, request_content, request_keys, json_escape, json_stringify, ExecResult } from 'shinra.core.utils';
+import { fetch_text } from 'shinra.resource_fetch';
+import { validate_fetch_strategy } from 'shinra.subscription_policy';
 
 const TELEGRAM_MAX_TEXT = 3900;
 
@@ -20,6 +22,7 @@ function default_notify_settings() {
 			bot_token: "",
 			chat_id: "",
 			location_name: "Shinra",
+			fetch_strategy: "proxy",
 			timeout_sec: 15
 		}
 	};
@@ -54,7 +57,7 @@ function normalize_notify_settings(raw) {
 	let defaults = default_notify_settings();
 	let source = type(raw.telegram) == "object" && raw.telegram != null && type(raw.telegram) != "array" ? raw.telegram : {};
 
-	return {
+	let result = {
 		schema_version: 1,
 		telegram: {
 			enabled: source.enabled == true,
@@ -62,9 +65,12 @@ function normalize_notify_settings(raw) {
 			bot_token: type(source.bot_token) == "string" ? trim_text(source.bot_token) : defaults.telegram.bot_token,
 			chat_id: type(source.chat_id) == "string" ? trim_text(source.chat_id) : defaults.telegram.chat_id,
 			location_name: type(source.location_name) == "string" && source.location_name != "" ? source.location_name : defaults.telegram.location_name,
+			fetch_strategy: type(source.fetch_strategy) == "string" && source.fetch_strategy != "" ? source.fetch_strategy : defaults.telegram.fetch_strategy,
 			timeout_sec: normalize_timeout(source.timeout_sec)
 		}
 	};
+	validate_fetch_strategy(result.telegram.fetch_strategy, "telegram.fetch_strategy");
+	return result;
 }
 
 function read_notify_settings() {
@@ -190,14 +196,15 @@ function task_title(settings, task_type, status) {
 function send_telegram_with_settings(trace_id, settings, task_type, status, message, force) {
 	let token = token_without_bot_prefix(settings.telegram.bot_token || "");
 	let chat_id = settings.telegram.chat_id || "";
+	let strategy = settings.telegram.fetch_strategy == "direct" ? "direct" : "proxy";
 
 	if (!should_send(settings, status, force)) {
 		write_notify_state(trace_id, task_type, status, message, false, "disabled or fail_only mode active");
-		return Success({ sent: false, reason: "disabled or fail_only mode active" }, 200, trace_id, "Telegram notification skipped");
+		return Success({ sent: false, reason: "disabled or fail_only mode active", fetch_strategy: strategy }, 200, trace_id, "Telegram notification skipped");
 	}
 	if (!length(token) || !length(chat_id)) {
 		write_notify_state(trace_id, task_type, status, message, false, "missing credentials");
-		return Success({ sent: false, reason: "missing credentials" }, 200, trace_id, "Telegram notification skipped");
+		return Success({ sent: false, reason: "missing credentials", fetch_strategy: strategy }, 200, trace_id, "Telegram notification skipped");
 	}
 
 	let text = truncate_text(task_title(settings, task_type, status) + "\n" + message);
@@ -208,38 +215,28 @@ function send_telegram_with_settings(trace_id, settings, task_type, status, mess
 		"\"disable_web_page_preview\":true" +
 	"}";
 
-	let result = ExecResult(trace_id, [
-		BIN.TIMEOUT,
-		"" + settings.telegram.timeout_sec,
-		"wget",
-		"-q",
-		"-T",
-		"" + settings.telegram.timeout_sec,
-		"-Y",
-		"off",
-		"--header",
-		"Content-Type: application/json",
-		"--post-data",
-		payload,
-		"-O",
-		"-",
-		url
-	]);
+	let result = fetch_text(trace_id, url, strategy, {
+		timeout_sec: settings.telegram.timeout_sec,
+		min_bytes: 1,
+		method: "POST",
+		post_data: payload,
+		headers: [ "Content-Type: application/json" ]
+	});
 
-	if (result.code != 0) {
-		let detail = redact_token(result.stderr || result.stdout || "Telegram request failed", token);
+	if (!result.ok) {
+		let detail = redact_token(result.stderr || result.body || "Telegram request failed", token);
 		write_notify_state(trace_id, task_type, status, message, false, detail);
 		return Fail(ERR.E_NOTIFY_SEND_FAILED, "Telegram API request failed", trace_id, detail);
 	}
 
-	let body = parse_json_object(result.stdout || "{}", "Telegram API response");
+	let body = parse_json_object(result.body || "{}", "Telegram API response");
 	if (body.ok == true) {
 		write_notify_state(trace_id, task_type, status, message, true, "");
-		return Success({ sent: true }, 200, trace_id, "Telegram notification sent");
+		return Success({ sent: true, fetch_strategy: strategy }, 200, trace_id, "Telegram notification sent");
 	}
 
-	write_notify_state(trace_id, task_type, status, message, false, redact_token(result.stdout || "", token));
-	return Fail(ERR.E_NOTIFY_SEND_FAILED, "Telegram API response rejected", trace_id, redact_token(result.stdout || "", token));
+	write_notify_state(trace_id, task_type, status, message, false, redact_token(result.body || "", token));
+	return Fail(ERR.E_NOTIFY_SEND_FAILED, "Telegram API response rejected", trace_id, redact_token(result.body || "", token));
 }
 
 function send_telegram(trace_id, task_type, status, message) {

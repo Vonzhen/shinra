@@ -9,6 +9,12 @@ const callRulesetInventory = rpc.declare({
 	expect: { '': {} }
 });
 
+const callRulesetRequiredInventory = rpc.declare({
+	object: 'shinra',
+	method: 'ruleset_required_inventory',
+	expect: { '': {} }
+});
+
 const callRulesetPolicyGet = rpc.declare({
 	object: 'shinra',
 	method: 'ruleset_policy_get',
@@ -22,9 +28,15 @@ const callRulesetPolicySave = rpc.declare({
 	expect: { '': {} }
 });
 
-const callRulesetDownloadRequired = rpc.declare({
+const callRulesetDownloadRequiredStart = rpc.declare({
 	object: 'shinra',
-	method: 'ruleset_download_required',
+	method: 'ruleset_download_required_start',
+	expect: { '': {} }
+});
+
+const callRulesetDownloadRequiredStatus = rpc.declare({
+	object: 'shinra',
+	method: 'ruleset_download_required_status',
 	expect: { '': {} }
 });
 
@@ -32,6 +44,7 @@ const DEFAULT_POLICY = {
 	mode: 'remote',
 	auto_update: false,
 	update_hour: 4,
+	fetch_strategy: 'direct',
 	repositories: {
 		private: '',
 		public: 'https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing'
@@ -42,24 +55,17 @@ let policy = null;
 let inventories = {
 	profile: null,
 	candidate: null,
-	runtime: null
+	required: null
 };
-let activeTab = 'remote';
+let activeTab = 'required';
 let actionStatus = '';
 let actionStatusOk = true;
+let actionToken = 0;
 
 function dataOf(result) {
 	if (result && result.ok && result.data)
 		return result.data;
 	return {};
-}
-
-function notifyFailure(result) {
-	if (!result || result.ok)
-		return;
-
-	const message = '%s: %s'.format(result.message || result.code || _('未知错误'), result.detail || result.code || _('无详细信息'));
-	setStatus(message, false);
 }
 
 function normalizePolicy(input) {
@@ -74,6 +80,7 @@ function normalizePolicy(input) {
 		mode: input.mode === 'local' ? 'local' : 'remote',
 		auto_update: input.auto_update === true,
 		update_hour: hour,
+		fetch_strategy: input.fetch_strategy === 'proxy' ? 'proxy' : 'direct',
 		repositories: {
 			private: typeof repositories.private === 'string' ? repositories.private : DEFAULT_POLICY.repositories.private,
 			public: typeof repositories.public === 'string' && repositories.public !== '' ? repositories.public : DEFAULT_POLICY.repositories.public
@@ -81,34 +88,27 @@ function normalizePolicy(input) {
 	};
 }
 
+function valueText(value) {
+	if (value == null || value === '')
+		return '-';
+	return String(value);
+}
+
 function readFieldValue(id, fallback) {
 	const node = document.getElementById(id);
-	if (!node)
-		return fallback;
-
-	return node.value;
+	return node ? node.value : fallback;
 }
 
 function readFieldChecked(id, fallback) {
 	const node = document.getElementById(id);
-	if (!node)
-		return fallback;
-
-	return !!node.checked;
+	return node ? !!node.checked : fallback;
 }
 
 function readFieldNumber(id, fallback) {
 	const value = readFieldValue(id, null);
 	if (value == null || value === '')
 		return fallback;
-
 	return Number(value);
-}
-
-function valueText(value) {
-	if (value == null || value === '')
-		return '-';
-	return String(value);
 }
 
 function bytesText(value) {
@@ -124,10 +124,7 @@ function bytesText(value) {
 		index++;
 	}
 
-	if (index === 0)
-		return '%d %s'.format(Math.round(size), units[index]);
-
-	return '%.1f %s'.format(size, units[index]);
+	return index === 0 ? '%d %s'.format(Math.round(size), units[index]) : '%.1f %s'.format(size, units[index]);
 }
 
 function sectionStyle() {
@@ -154,240 +151,6 @@ function statusPill(text, level) {
 	}, text);
 }
 
-function inlineActionStatus() {
-	return E('div', {
-		'id': 'shinra-ruleset-action-status',
-		'style': 'display: %s; border: 1px solid %s; border-radius: 8px; padding: .65rem; margin-top: .75rem; background: %s; color: %s; overflow-wrap: anywhere;'.format(
-			actionStatus ? 'block' : 'none',
-			actionStatusOk ? '#bbf7d0' : '#fecaca',
-			actionStatusOk ? '#f0fdf4' : '#fef2f2',
-			actionStatusOk ? '#166534' : '#991b1b'
-		)
-	}, actionStatus);
-}
-
-function remoteEntries() {
-	const entries = inventories.profile && Array.isArray(inventories.profile.entries) ? inventories.profile.entries : [];
-	return entries;
-}
-
-function localSource() {
-	const candidate = inventories.candidate && Array.isArray(inventories.candidate.entries) ? inventories.candidate.entries : [];
-	const runtime = inventories.runtime && Array.isArray(inventories.runtime.entries) ? inventories.runtime.entries : [];
-	let candidateLocal = candidate.filter(function(entry) { return entry && entry.path; });
-	let runtimeLocal = runtime.filter(function(entry) { return entry && entry.path; });
-
-	if (candidateLocal.length)
-		return {
-			name: 'Candidate',
-			path: inventories.candidate.path || '',
-			entries: candidateLocal
-		};
-
-	if (runtimeLocal.length)
-		return {
-			name: 'Runtime',
-			path: inventories.runtime.path || '',
-			entries: runtimeLocal
-		};
-
-	return {
-		name: 'Local',
-		path: '/etc/shinra/rules',
-		entries: []
-	};
-}
-
-function modeButton(mode, label) {
-	const active = policy.mode === mode;
-	return E('button', {
-		'class': active ? 'btn cbi-button cbi-button-positive' : 'btn cbi-button',
-		'style': 'min-width: 120px;',
-		'click': function(ev) {
-			ev.preventDefault();
-			updatePolicyFromFields();
-			policy.mode = mode;
-			redraw();
-		}
-	}, label);
-}
-
-function modeSettings() {
-	return E('div', { 'style': sectionStyle() }, [
-		E('h3', { 'style': 'margin-top: 0;' }, _('模式')),
-		E('div', { 'style': 'display: flex; gap: .5rem; flex-wrap: wrap; margin-bottom: .65rem;' }, [
-			modeButton('remote', _('远程模式')),
-			modeButton('local', _('本地模式'))
-		]),
-		E('div', { 'style': 'color: #667; overflow-wrap: anywhere;' }, policy.mode === 'local' ?
-			_('本地模式要求规则集位于 /etc/shinra/rules。缺少必要本地文件时，候选配置生成会失败。') :
-			_('远程模式保留 main-profile.json 中的 rule_set 声明，不要求本地文件。'))
-	]);
-}
-
-function localSyncSettings() {
-	if (policy.mode !== 'local')
-		return E('div', { 'style': 'display: none;' }, '');
-
-	return E('div', { 'style': sectionStyle() }, [
-		E('h3', { 'style': 'margin-top: 0;' }, _('本地同步设置')),
-		E('div', { 'style': 'display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: .75rem; margin-bottom: .75rem;' }, [
-			E('label', {}, [
-				E('div', { 'style': 'font-size: 12px; color: #667; font-weight: 700; margin-bottom: .25rem;' }, _('本地目录')),
-				E('input', { 'class': 'cbi-input-text', 'readonly': 'readonly', 'value': '/etc/shinra/rules' })
-			]),
-			E('label', {}, [
-				E('div', { 'style': 'font-size: 12px; color: #667; font-weight: 700; margin-bottom: .25rem;' }, _('每日同步小时')),
-				E('input', {
-					'id': 'shinra-ruleset-update-hour',
-					'class': 'cbi-input-text',
-					'type': 'number',
-					'min': '0',
-					'max': '23',
-					'value': String(policy.update_hour)
-				})
-			]),
-			E('label', { 'style': 'display: flex; gap: .5rem; align-items: center; margin-top: 1.45rem;' }, [
-				E('input', { 'id': 'shinra-ruleset-auto-update', 'type': 'checkbox', 'checked': policy.auto_update ? 'checked' : null }),
-				E('span', {}, _('每日自动同步'))
-			])
-		]),
-		E('div', { 'style': 'display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: .75rem; margin-bottom: .75rem;' }, [
-			E('label', {}, [
-				E('div', { 'style': 'font-size: 12px; color: #667; font-weight: 700; margin-bottom: .25rem;' }, _('私有仓库')),
-				E('input', {
-					'id': 'shinra-ruleset-private-repo',
-					'class': 'cbi-input-text',
-					'placeholder': _('可选私有仓库地址'),
-					'value': policy.repositories.private
-				})
-			]),
-			E('label', {}, [
-				E('div', { 'style': 'font-size: 12px; color: #667; font-weight: 700; margin-bottom: .25rem;' }, _('公共仓库')),
-				E('input', {
-					'id': 'shinra-ruleset-public-repo',
-					'class': 'cbi-input-text',
-					'value': policy.repositories.public
-				})
-			])
-		]),
-		E('div', { 'style': 'color: #667; margin-bottom: .85rem;' }, _('下载策略：私有仓库优先，公共仓库兜底，最后使用模板 URL。下载直连，不依赖代理。')),
-		E('div', { 'style': 'display: flex; gap: .5rem; align-items: center; flex-wrap: wrap;' }, [
-			E('button', { 'class': 'btn cbi-button cbi-button-save', 'click': function(ev) { ev.preventDefault(); return savePolicy(); } }, _('保存设置')),
-			E('button', { 'class': 'btn cbi-button cbi-button-apply', 'click': function(ev) { ev.preventDefault(); return syncRulesets(); } }, _('同步所需规则集'))
-		]),
-		inlineActionStatus()
-	]);
-}
-
-function remoteModeActions() {
-	if (policy.mode === 'local')
-		return E('div', { 'style': 'display: none;' }, '');
-
-	return E('div', { 'style': sectionStyle() }, [
-		E('div', { 'style': 'display: flex; justify-content: space-between; align-items: center; gap: .75rem; flex-wrap: wrap;' }, [
-			E('div', {}, [
-				E('div', { 'style': 'font-weight: 700;' }, _('远程规则集')),
-				E('div', { 'style': 'color: #667; margin-top: .25rem;' }, _('远程模式只保存模式设置，本地同步控制项会隐藏。'))
-			]),
-			E('button', { 'class': 'btn cbi-button cbi-button-save', 'click': function(ev) { ev.preventDefault(); return savePolicy(); } }, _('保存设置'))
-		]),
-		inlineActionStatus()
-	]);
-}
-
-function tabButton(tab, label) {
-	return E('button', {
-		'class': activeTab === tab ? 'btn cbi-button cbi-button-positive' : 'btn cbi-button',
-		'click': function(ev) {
-			ev.preventDefault();
-			activeTab = tab;
-			redraw();
-		}
-	}, label);
-}
-
-function remoteRows(entries) {
-	if (!entries.length)
-		return [ E('tr', {}, [ E('td', { 'colspan': '4', 'style': 'padding: .8rem; color: #667; text-align: center;' }, _('未声明远程规则集。')) ]) ];
-
-	return entries.map(function(entry) {
-		return E('tr', {}, [
-			E('td', { 'style': 'overflow-wrap: anywhere; font-weight: 600;' }, valueText(entry.tag)),
-			E('td', {}, '%s / %s'.format(valueText(entry.type), valueText(entry.format))),
-			E('td', { 'style': 'overflow-wrap: anywhere;' }, valueText(entry.url_redacted || entry.source_url)),
-			E('td', {}, statusPill(_('远程'), ''))
-		]);
-	});
-}
-
-function localRows(entries) {
-	if (!entries.length)
-		return [ E('tr', {}, [ E('td', { 'colspan': '5', 'style': 'padding: .8rem; color: #667; text-align: center;' }, _('未观测到本地规则集。请在本地模式下生成候选配置或同步规则集。')) ]) ];
-
-	return entries.map(function(entry) {
-		return E('tr', {}, [
-			E('td', { 'style': 'overflow-wrap: anywhere; font-weight: 600;' }, valueText(entry.tag)),
-			E('td', { 'style': 'overflow-wrap: anywhere;' }, valueText(entry.path)),
-			E('td', { 'style': 'text-align: right;' }, bytesText(entry.size)),
-			E('td', { 'style': 'text-align: right;' }, entry.mtime ? valueText(entry.mtime) : '-'),
-			E('td', {}, entry.exists === false ? statusPill(_('缺失'), 'error') : statusPill(_('就绪'), 'ok'))
-		]);
-	});
-}
-
-function rulesetList() {
-	const local = localSource();
-	const entries = activeTab === 'local' ? local.entries : remoteEntries();
-
-	return E('div', { 'style': sectionStyle() }, [
-		E('div', { 'style': 'display: flex; justify-content: space-between; align-items: center; gap: .75rem; flex-wrap: wrap; margin-bottom: .75rem;' }, [
-			E('h3', { 'style': 'margin: 0;' }, _('规则集列表')),
-			E('div', { 'style': 'display: flex; gap: .5rem; flex-wrap: wrap;' }, [
-				tabButton('remote', _('远程规则集')),
-				tabButton('local', _('本地规则集'))
-			])
-		]),
-		E('div', { 'style': 'color: #667; margin-bottom: .75rem; overflow-wrap: anywhere;' }, activeTab === 'local' ?
-			'%s: %s'.format(_('本地来源'), '%s (%s)'.format(local.name, valueText(local.path))) :
-			_('远程列表读取自原始模板声明。')),
-		E('div', { 'style': 'overflow-x: auto;' }, [
-			activeTab === 'local' ?
-				E('table', { 'class': 'table', 'style': 'min-width: 820px;' }, [
-					E('thead', {}, [ E('tr', {}, [
-						E('th', {}, _('标签')),
-						E('th', {}, _('路径')),
-						E('th', { 'style': 'text-align: right;' }, _('大小')),
-						E('th', { 'style': 'text-align: right;' }, _('修改时间')),
-						E('th', {}, _('状态'))
-					]) ]),
-					E('tbody', {}, localRows(entries))
-				]) :
-				E('table', { 'class': 'table', 'style': 'min-width: 820px;' }, [
-					E('thead', {}, [ E('tr', {}, [
-						E('th', {}, _('标签')),
-						E('th', {}, _('类型')),
-						E('th', {}, _('来源')),
-						E('th', {}, _('状态'))
-					]) ]),
-					E('tbody', {}, remoteRows(entries))
-				])
-		])
-	]);
-}
-
-function updatePolicyFromFields() {
-	policy = normalizePolicy({
-		mode: policy.mode,
-		auto_update: readFieldChecked('shinra-ruleset-auto-update', policy.auto_update),
-		update_hour: readFieldNumber('shinra-ruleset-update-hour', policy.update_hour),
-		repositories: {
-			private: readFieldValue('shinra-ruleset-private-repo', policy.repositories.private),
-			public: readFieldValue('shinra-ruleset-public-repo', policy.repositories.public)
-		}
-	});
-}
-
 function setStatus(text, ok) {
 	actionStatus = text || '';
 	actionStatusOk = ok !== false;
@@ -402,54 +165,408 @@ function setStatus(text, ok) {
 	node.style.color = actionStatusOk ? '#166534' : '#991b1b';
 }
 
+function inlineActionStatus() {
+	return E('div', {
+		'id': 'shinra-ruleset-action-status',
+		'style': 'display: %s; border: 1px solid %s; border-radius: 8px; padding: .65rem; margin-top: .75rem; background: %s; color: %s; overflow-wrap: anywhere;'.format(
+			actionStatus ? 'block' : 'none',
+			actionStatusOk ? '#bbf7d0' : '#fecaca',
+			actionStatusOk ? '#f0fdf4' : '#fef2f2',
+			actionStatusOk ? '#166534' : '#991b1b'
+		)
+	}, actionStatus);
+}
+
+function notifyFailure(result) {
+	if (!result || result.ok)
+		return;
+	setStatus('%s: %s'.format(result.message || result.code || _('\u672a\u77e5\u9519\u8bef'), result.detail || result.code || _('\u65e0\u8be6\u7ec6\u4fe1\u606f')), false);
+}
+
+function delay(ms) {
+	return new Promise(function(resolve) {
+		window.setTimeout(resolve, ms);
+	});
+}
+
+function rulesetJobFrom(result) {
+	const data = dataOf(result);
+	const state = data.state && typeof data.state === 'object' ? data.state : {};
+	const jobs = state.jobs && typeof state.jobs === 'object' ? state.jobs : {};
+	return jobs.ruleset_download_required && typeof jobs.ruleset_download_required === 'object' ? jobs.ruleset_download_required : {};
+}
+
+function rulesetJobCounts(job) {
+	const completed = Number(job.completed_count || 0);
+	let text = _('\u8fdb\u5ea6 %d / %d\uff0c\u5df2\u66f4\u65b0 %d\uff0c\u672a\u53d8\u5316 %d\uff0c\u5931\u8d25 %d').format(
+		completed,
+		Number(job.required_count || 0),
+		Number(job.updated_count || 0),
+		Number(job.unchanged_count || 0),
+		Number(job.failed_count || 0)
+	);
+	const checked = Number(job.checked_count || 0);
+	if (checked)
+		text += _('\uff1b\u5b8c\u6574\u6bd4\u5bf9 %d').format(checked);
+	if (job.current_tag)
+		text += _('\uff1b\u5f53\u524d %s').format(job.current_tag);
+	if (job.current_url_redacted)
+		text += _('\uff1b\u6765\u6e90 %s').format(job.current_url_redacted);
+	if (job.last_error)
+		text += _('\uff1b\u6700\u8fd1\u9519\u8bef %s').format(job.last_error);
+	return text;
+}
+
+function rulesetJobStatusText(job) {
+	const status = job.status || '-';
+	const counts = rulesetJobCounts(job);
+	const message = job.message || '';
+
+	if (status === 'starting')
+		return _('\u89c4\u5219\u96c6\u540c\u6b65\u5df2\u6392\u961f\u3002');
+	if (status === 'running')
+		return _('\u89c4\u5219\u96c6\u6b63\u5728\u540c\u6b65\uff1a%s').format(counts);
+	if (status === 'success')
+		return _('\u89c4\u5219\u96c6\u540c\u6b65\u5b8c\u6210\uff1a%s%s').format(counts, message ? ' - ' + message : '');
+	if (status === 'partial')
+		return _('\u89c4\u5219\u96c6\u90e8\u5206\u540c\u6b65\u5b8c\u6210\uff1a%s%s').format(counts, message ? ' - ' + message : '');
+	if (status === 'failed')
+		return _('\u89c4\u5219\u96c6\u540c\u6b65\u5931\u8d25\uff1a%s').format(message || counts);
+
+	return message || _('\u672a\u89c2\u6d4b\u5230\u89c4\u5219\u96c6\u540c\u6b65\u72b6\u6001\u3002');
+}
+
+function updatePolicyFromFields() {
+	policy = normalizePolicy({
+		mode: readFieldValue('shinra-ruleset-mode', policy.mode),
+		auto_update: readFieldChecked('shinra-ruleset-auto-update', policy.auto_update),
+		update_hour: readFieldNumber('shinra-ruleset-update-hour', policy.update_hour),
+		fetch_strategy: readFieldValue('shinra-ruleset-fetch-strategy', policy.fetch_strategy),
+		repositories: {
+			private: readFieldValue('shinra-ruleset-private-repo', policy.repositories.private),
+			public: readFieldValue('shinra-ruleset-public-repo', policy.repositories.public)
+		}
+	});
+}
+
+function modeHelpText() {
+	return policy.mode === 'local' ?
+		_('\u672c\u5730\u6a21\u5f0f\u4f1a\u5728\u751f\u6210\u5019\u9009\u914d\u7f6e\u65f6\u628a\u89c4\u5219\u96c6\u6539\u5199\u5230 /etc/shinra/rules\u3002\u7f3a\u5931\u672c\u5730\u6587\u4ef6\u4f1a\u963b\u6b62\u5019\u9009\u914d\u7f6e\u751f\u6210\u3002') :
+		_('\u8fdc\u7a0b\u6a21\u5f0f\u4fdd\u7559 main-profile.json \u4e2d\u7684 rule_set \u58f0\u660e\uff0c\u4e0d\u8981\u6c42\u672c\u5730\u89c4\u5219\u96c6\u6587\u4ef6\u3002');
+}
+
+function modeSettings() {
+	return E('div', { 'style': sectionStyle() }, [
+		E('h3', { 'style': 'margin-top: 0;' }, _('\u6a21\u5f0f\u8bbe\u7f6e')),
+		E('div', { 'style': 'display: flex; gap: .65rem; align-items: flex-end; flex-wrap: wrap; margin-bottom: .65rem;' }, [
+			E('label', { 'style': 'min-width: 220px;' }, [
+				E('div', { 'style': 'font-size: 12px; color: #667; font-weight: 700; margin-bottom: .25rem;' }, _('\u89c4\u5219\u96c6\u6a21\u5f0f')),
+				E('select', {
+					'id': 'shinra-ruleset-mode',
+					'class': 'cbi-input-select',
+					'style': 'width: 100%;',
+					'change': function(ev) {
+						actionToken++;
+						updatePolicyFromFields();
+						policy.mode = ev.target.value === 'local' ? 'local' : 'remote';
+						actionStatus = '';
+						redraw();
+					}
+				}, [
+					E('option', { 'value': 'remote', 'selected': policy.mode === 'remote' ? 'selected' : null }, _('\u8fdc\u7a0b\u6a21\u5f0f')),
+					E('option', { 'value': 'local', 'selected': policy.mode === 'local' ? 'selected' : null }, _('\u672c\u5730\u6a21\u5f0f'))
+				])
+			]),
+			E('button', { 'type': 'button', 'class': 'btn cbi-button cbi-button-save', 'click': function(ev) { ev.preventDefault(); return savePolicy(); } }, _('\u4fdd\u5b58\u8bbe\u7f6e')),
+			policy.mode === 'local' ? E('button', { 'type': 'button', 'class': 'btn cbi-button cbi-button-apply', 'click': function(ev) { ev.preventDefault(); return syncRulesets(); } }, _('\u540c\u6b65\u6240\u9700\u89c4\u5219\u96c6')) : ''
+		]),
+		E('div', { 'style': 'color: #667; overflow-wrap: anywhere;' }, modeHelpText()),
+		inlineActionStatus()
+	]);
+}
+
+function localSyncSettings() {
+	if (policy.mode !== 'local')
+		return E('div', { 'style': 'display: none;' }, '');
+
+	return E('div', { 'style': sectionStyle() }, [
+		E('h3', { 'style': 'margin-top: 0;' }, _('\u672c\u5730\u540c\u6b65\u8bbe\u7f6e')),
+		E('div', { 'style': 'display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: .75rem; margin-bottom: .75rem;' }, [
+			E('label', {}, [
+				E('div', { 'style': 'font-size: 12px; color: #667; font-weight: 700; margin-bottom: .25rem;' }, _('\u672c\u5730\u76ee\u5f55')),
+				E('input', { 'class': 'cbi-input-text', 'readonly': 'readonly', 'value': '/etc/shinra/rules' })
+			]),
+			E('label', {}, [
+				E('div', { 'style': 'font-size: 12px; color: #667; font-weight: 700; margin-bottom: .25rem;' }, _('\u4e0b\u8f7d\u7b56\u7565')),
+				E('select', { 'id': 'shinra-ruleset-fetch-strategy', 'class': 'cbi-input-select', 'style': 'width: 100%;' }, [
+					E('option', { 'value': 'direct', 'selected': policy.fetch_strategy === 'direct' ? 'selected' : null }, _('\u76f4\u8fde')),
+					E('option', { 'value': 'proxy', 'selected': policy.fetch_strategy === 'proxy' ? 'selected' : null }, _('\u4ee3\u7406'))
+				])
+			]),
+			E('label', {}, [
+				E('div', { 'style': 'font-size: 12px; color: #667; font-weight: 700; margin-bottom: .25rem;' }, _('\u6bcf\u65e5\u540c\u6b65\u65f6\u95f4')),
+				E('input', {
+					'id': 'shinra-ruleset-update-hour',
+					'class': 'cbi-input-text',
+					'type': 'number',
+					'min': '0',
+					'max': '23',
+					'value': String(policy.update_hour)
+				})
+			]),
+			E('label', { 'style': 'display: flex; gap: .5rem; align-items: center; margin-top: 1.45rem;' }, [
+				E('input', { 'id': 'shinra-ruleset-auto-update', 'type': 'checkbox', 'checked': policy.auto_update ? 'checked' : null }),
+				E('span', {}, _('\u6bcf\u65e5\u81ea\u52a8\u540c\u6b65'))
+			])
+		]),
+		E('div', { 'style': 'display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: .75rem; margin-bottom: .75rem;' }, [
+			E('label', {}, [
+				E('div', { 'style': 'font-size: 12px; color: #667; font-weight: 700; margin-bottom: .25rem;' }, _('\u79c1\u6709\u4ed3\u5e93')),
+				E('input', {
+					'id': 'shinra-ruleset-private-repo',
+					'class': 'cbi-input-text',
+					'placeholder': _('\u53ef\u9009\u7684\u79c1\u6709\u4ed3\u5e93\u5730\u5740'),
+					'value': policy.repositories.private
+				})
+			]),
+			E('label', {}, [
+				E('div', { 'style': 'font-size: 12px; color: #667; font-weight: 700; margin-bottom: .25rem;' }, _('\u516c\u5171\u4ed3\u5e93')),
+				E('input', {
+					'id': 'shinra-ruleset-public-repo',
+					'class': 'cbi-input-text',
+					'value': policy.repositories.public
+				})
+			])
+		]),
+		E('div', { 'style': 'color: #667;' }, _('\u4e0b\u8f7d\u987a\u5e8f\uff1a\u79c1\u6709\u4ed3\u5e93\u4f18\u5148\uff0c\u516c\u5171\u4ed3\u5e93\u515c\u5e95\uff0c\u6700\u540e\u4f7f\u7528\u6a21\u677f\u4e2d\u7684\u539f\u59cb\u5730\u5740\u3002'))
+	]);
+}
+
+function tabButton(tab, label) {
+	return E('button', {
+		'type': 'button',
+		'class': activeTab === tab ? 'btn cbi-button cbi-button-positive' : 'btn cbi-button',
+		'click': function(ev) {
+			ev.preventDefault();
+			actionToken++;
+			activeTab = tab;
+			actionStatus = '';
+			redraw();
+		}
+	}, label);
+}
+
+function timeText(value) {
+	if (!value)
+		return '-';
+	return valueText(value);
+}
+
+function statBox(label, value) {
+	return E('div', { 'style': 'border: 1px solid #e5e7eb; border-radius: 8px; padding: .65rem; background: #f8fafc;' }, [
+		E('div', { 'style': 'font-size: 12px; color: #667; font-weight: 700;' }, label),
+		E('div', { 'style': 'font-size: 22px; font-weight: 800; margin-top: .25rem;' }, valueText(value))
+	]);
+}
+
+function requiredInventory() {
+	return inventories.required && typeof inventories.required === 'object' ? inventories.required : {};
+}
+
+function rulesetStatus(entry) {
+	if (!entry || entry.status === 'missing')
+		return statusPill(_('\u7f3a\u5931'), 'error');
+	if (entry.status === 'extra')
+		return statusPill(_('\u672c\u5730\u591a\u4f59'), 'warning');
+	return statusPill(_('\u5df2\u5c31\u7eea'), 'ok');
+}
+
+function sourceText(entry) {
+	const urls = entry && Array.isArray(entry.candidate_url_redacted) ? entry.candidate_url_redacted : [];
+	if (urls.length)
+		return urls.join('\n');
+	return valueText(entry && (entry.source_url_redacted || entry.source_url));
+}
+
+function readinessSummary(inv) {
+	const summary = inv.summary || {};
+	return E('div', { 'style': 'display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: .65rem; margin: .75rem 0;' }, [
+		statBox(_('\u6a21\u677f\u9700\u8981'), summary.required_count || 0),
+		statBox(_('\u5df2\u5c31\u7eea'), summary.ready_count || 0),
+		statBox(_('\u7f3a\u5931'), summary.missing_count || 0),
+		statBox(_('\u672c\u5730\u603b\u6570'), summary.local_count || 0),
+		statBox(_('\u672c\u5730\u591a\u4f59'), summary.local_extra_count || 0)
+	]);
+}
+
+function requiredRows(entries) {
+	if (!entries.length)
+		return [ E('tr', {}, [ E('td', { 'colspan': '7', 'style': 'padding: .8rem; color: #667; text-align: center;' }, _('\u6a21\u677f\u6ca1\u6709\u5f15\u7528\u89c4\u5219\u96c6\u3002')) ]) ];
+
+	return entries.map(function(entry) {
+		return E('tr', {}, [
+			E('td', { 'style': 'overflow-wrap: anywhere; font-weight: 600;' }, valueText(entry.tag)),
+			E('td', {}, rulesetStatus(entry)),
+			E('td', { 'style': 'overflow-wrap: anywhere;' }, valueText(entry.local_path)),
+			E('td', { 'style': 'text-align: right;' }, bytesText(Number(entry.local_size || 0))),
+			E('td', { 'style': 'text-align: right;' }, timeText(entry.local_mtime)),
+			E('td', { 'style': 'overflow-wrap: anywhere; white-space: pre-line;' }, sourceText(entry)),
+			E('td', {}, entry.status === 'missing' ? _('\u6a21\u677f\u9700\u8981\uff0c\u672c\u5730\u7f3a\u5931') : '-')
+		]);
+	});
+}
+
+function extraRows(entries) {
+	if (!entries.length)
+		return [ E('tr', {}, [ E('td', { 'colspan': '5', 'style': 'padding: .8rem; color: #667; text-align: center;' }, _('\u6ca1\u6709\u672c\u5730\u591a\u4f59\u89c4\u5219\u96c6\u3002')) ]) ];
+
+	return entries.map(function(entry) {
+		return E('tr', {}, [
+			E('td', { 'style': 'overflow-wrap: anywhere; font-weight: 600;' }, valueText(entry.tag)),
+			E('td', {}, rulesetStatus(entry)),
+			E('td', { 'style': 'overflow-wrap: anywhere;' }, valueText(entry.local_path)),
+			E('td', { 'style': 'text-align: right;' }, bytesText(Number(entry.local_size || 0))),
+			E('td', { 'style': 'text-align: right;' }, timeText(entry.local_mtime))
+		]);
+	});
+}
+
+function rulesetList() {
+	const inv = requiredInventory();
+	const entries = Array.isArray(inv.entries) ? inv.entries : [];
+	const extras = Array.isArray(inv.extras) ? inv.extras : [];
+	const showingExtras = activeTab === 'extra';
+
+	return E('div', { 'style': sectionStyle() }, [
+		E('div', { 'style': 'display: flex; justify-content: space-between; align-items: center; gap: .75rem; flex-wrap: wrap; margin-bottom: .75rem;' }, [
+			E('h3', { 'style': 'margin: 0;' }, _('\u89c4\u5219\u96c6\u5bf9\u6bd4')),
+			E('div', { 'style': 'display: flex; gap: .5rem; flex-wrap: wrap;' }, [
+				tabButton('required', _('\u6a21\u677f\u6240\u9700')),
+				tabButton('extra', _('\u672c\u5730\u591a\u4f59'))
+			])
+		]),
+		E('div', { 'style': 'color: #667; margin-bottom: .75rem; overflow-wrap: anywhere;' },
+			_('\u5bf9\u6bd4 main-profile.json \u5f15\u7528\u7684\u89c4\u5219\u96c6\u4e0e /etc/shinra/rules \u672c\u5730\u6587\u4ef6\u3002')),
+		readinessSummary(inv),
+		E('div', { 'style': 'overflow-x: auto;' }, [
+			showingExtras ?
+				E('table', { 'class': 'table', 'style': 'min-width: 760px;' }, [
+					E('thead', {}, [ E('tr', {}, [
+						E('th', {}, _('\u6807\u7b7e')),
+						E('th', {}, _('\u72b6\u6001')),
+						E('th', {}, _('\u672c\u5730\u6587\u4ef6')),
+						E('th', { 'style': 'text-align: right;' }, _('\u5927\u5c0f')),
+						E('th', { 'style': 'text-align: right;' }, _('\u4fee\u6539\u65f6\u95f4'))
+					]) ]),
+					E('tbody', {}, extraRows(extras))
+				]) :
+				E('table', { 'class': 'table', 'style': 'min-width: 980px;' }, [
+					E('thead', {}, [ E('tr', {}, [
+						E('th', {}, _('\u6807\u7b7e')),
+						E('th', {}, _('\u72b6\u6001')),
+						E('th', {}, _('\u672c\u5730\u6587\u4ef6')),
+						E('th', { 'style': 'text-align: right;' }, _('\u5927\u5c0f')),
+						E('th', { 'style': 'text-align: right;' }, _('\u4fee\u6539\u65f6\u95f4')),
+						E('th', {}, _('\u4e0b\u8f7d\u6765\u6e90')),
+						E('th', {}, _('\u8bca\u65ad'))
+					]) ]),
+					E('tbody', {}, requiredRows(entries))
+				])
+		])
+	]);
+}
+
 function savePolicy() {
+	const token = ++actionToken;
 	updatePolicyFromFields();
-	setStatus(_('正在保存...'), true);
+	setStatus(_('\u6b63\u5728\u4fdd\u5b58\u8bbe\u7f6e...'), true);
 
 	return callRulesetPolicySave(JSON.stringify(policy)).then(function(result) {
+		if (token !== actionToken)
+			return result;
 		notifyFailure(result);
 		if (result && result.ok) {
 			policy = normalizePolicy(dataOf(result).policy);
-			setStatus(_('设置已保存。'), true);
+			setStatus(_('\u89c4\u5219\u96c6\u8bbe\u7f6e\u5df2\u4fdd\u5b58\u3002'), true);
 			redraw();
 		} else {
-			setStatus(_('保存失败。'), false);
+			setStatus(_('\u4fdd\u5b58\u5931\u8d25\u3002'), false);
 		}
 		return result;
 	}).catch(function(error) {
+		if (token !== actionToken)
+			return;
 		setStatus(error.message || String(error), false);
 	});
 }
 
+function pollRulesetSync(token, attempt) {
+	return callRulesetDownloadRequiredStatus().then(function(statusResult) {
+		if (token !== actionToken)
+			return statusResult;
+		notifyFailure(statusResult);
+		if (!statusResult || !statusResult.ok) {
+			setStatus(_('\u8bfb\u53d6\u89c4\u5219\u96c6\u540c\u6b65\u72b6\u6001\u5931\u8d25\u3002'), false);
+			return refreshAll();
+		}
+
+		const job = rulesetJobFrom(statusResult);
+		const status = job.status || '';
+
+		if (status === 'starting' || status === 'running') {
+			setStatus(rulesetJobStatusText(job), true);
+			if (attempt >= 180) {
+				setStatus(_('\u89c4\u5219\u96c6\u540c\u6b65\u4ecd\u5728\u540e\u53f0\u8fd0\u884c\u3002\u7a0d\u540e\u8fd4\u56de\u53ef\u67e5\u770b\u7ed3\u679c\u3002'), true);
+				return refreshAll();
+			}
+
+			return delay(2000).then(function() {
+				return pollRulesetSync(token, attempt + 1);
+			});
+		}
+
+		const ok = status === 'success' || status === 'partial';
+		setStatus(rulesetJobStatusText(job), ok && Number(job.failed_count || 0) === 0);
+		return refreshAll();
+	}).catch(function(error) {
+		if (token !== actionToken)
+			return;
+		setStatus(error.message || String(error), false);
+		return refreshAll();
+	});
+}
+
 function syncRulesets() {
+	const token = ++actionToken;
 	updatePolicyFromFields();
-	setStatus(_('正在保存设置并同步所需规则集...'), true);
+	setStatus(_('\u6b63\u5728\u4fdd\u5b58\u8bbe\u7f6e\u5e76\u542f\u52a8\u89c4\u5219\u96c6\u540c\u6b65...'), true);
 
 	return callRulesetPolicySave(JSON.stringify(policy)).then(function(saveResult) {
+		if (token !== actionToken)
+			return saveResult;
 		notifyFailure(saveResult);
 		if (!saveResult || !saveResult.ok) {
-			setStatus(_('保存失败。'), false);
+			setStatus(_('\u4fdd\u5b58\u5931\u8d25\u3002'), false);
 			return saveResult;
 		}
 
 		policy = normalizePolicy(dataOf(saveResult).policy);
-		return callRulesetDownloadRequired();
-	}).then(function(syncResult) {
-		if (!syncResult || !syncResult.ok) {
-			notifyFailure(syncResult);
-			setStatus(_('同步失败。'), false);
+		return callRulesetDownloadRequiredStart();
+	}).then(function(startResult) {
+		if (token !== actionToken)
+			return startResult;
+		notifyFailure(startResult);
+		if (!startResult || !startResult.ok) {
+			setStatus(_('\u542f\u52a8\u89c4\u5219\u96c6\u540c\u6b65\u5931\u8d25\u3002'), false);
 			return refreshAll();
 		}
 
-		let summary = syncResult.data && syncResult.data.summary ? syncResult.data.summary : {};
-		setStatus(_('规则集同步完成：需要 %d，已更新 %d，未变化 %d，失败 %d。准备使用本地规则集时，请生成候选配置。').format(
-			summary.required_count || 0,
-			summary.updated_count || 0,
-			summary.unchanged_count || 0,
-			summary.failed_count || 0
-		), summary.failed_count ? false : true);
-		return refreshAll();
+		const job = rulesetJobFrom(startResult);
+		setStatus(rulesetJobStatusText(job), true);
+		return pollRulesetSync(token, 0);
 	}).catch(function(error) {
+		if (token !== actionToken)
+			return;
 		setStatus(error.message || String(error), false);
 	});
 }
@@ -457,17 +574,13 @@ function syncRulesets() {
 function refreshAll() {
 	return Promise.all([
 		callRulesetPolicyGet(),
-		callRulesetInventory('profile'),
-		callRulesetInventory('candidate'),
-		callRulesetInventory('runtime')
+		callRulesetRequiredInventory()
 	]).then(function(results) {
 		for (let i = 0; i < results.length; i++)
 			notifyFailure(results[i]);
 
 		policy = normalizePolicy(dataOf(results[0]).policy);
-		inventories.profile = dataOf(results[1]);
-		inventories.candidate = dataOf(results[2]);
-		inventories.runtime = dataOf(results[3]);
+		inventories.required = dataOf(results[1]);
 		redraw();
 		return results;
 	}).catch(function(error) {
@@ -483,10 +596,9 @@ function redraw() {
 
 function renderPage() {
 	return E('div', { 'id': 'shinra-rulesets-root' }, [
-		E('h2', {}, _('规则集')),
-		E('p', {}, _('管理 main-profile.json 所需的规则集模式和本地资源。')),
+		E('h2', {}, '规则集'),
+		E('p', {}, '管理 main-profile.json 所需的规则集模式和本地资源。'),
 		modeSettings(),
-		remoteModeActions(),
 		localSyncSettings(),
 		rulesetList()
 	]);
@@ -496,27 +608,19 @@ return view.extend({
 	load: function() {
 		return Promise.all([
 			callRulesetPolicyGet(),
-			callRulesetInventory('profile'),
-			callRulesetInventory('candidate'),
-			callRulesetInventory('runtime')
+			callRulesetRequiredInventory()
 		]);
 	},
 
 	render: function(results) {
 		const policyResult = results && results[0] ? results[0] : {};
-		const profileResult = results && results[1] ? results[1] : {};
-		const candidateResult = results && results[2] ? results[2] : {};
-		const runtimeResult = results && results[3] ? results[3] : {};
+		const requiredResult = results && results[1] ? results[1] : {};
 
 		notifyFailure(policyResult);
-		notifyFailure(profileResult);
-		notifyFailure(candidateResult);
-		notifyFailure(runtimeResult);
+		notifyFailure(requiredResult);
 
 		policy = normalizePolicy(dataOf(policyResult).policy);
-		inventories.profile = dataOf(profileResult);
-		inventories.candidate = dataOf(candidateResult);
-		inventories.runtime = dataOf(runtimeResult);
+		inventories.required = dataOf(requiredResult);
 
 		return renderPage();
 	}

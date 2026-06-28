@@ -4,11 +4,11 @@
 
 'use strict';
 
-import { PATH, BIN, CLASH_API } from 'shinra.core.constants';
+import { PATH, BIN } from 'shinra.core.constants';
 import { Success, Fail } from 'shinra.core.result';
 import { ERR } from 'shinra.core.error';
 import { read_optional_text, write_runtime_text_atomic, parse_json_object, json_escape, file_exists, ExecResult } from 'shinra.core.utils';
-import { api_available } from 'shinra.clash';
+import { api_available, clash_api_url } from 'shinra.clash';
 
 function trim_line(value) {
 	value = replace("" + value, "\r", "");
@@ -90,7 +90,7 @@ function clash_api_available(trace_id, running) {
 	if (!running)
 		return false;
 
-	return api_available(trace_id, CLASH_API.PROXIES);
+	return api_available(trace_id, clash_api_url("/proxies"));
 }
 
 function runtime_state_json(trace_id, service_result) {

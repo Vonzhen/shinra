@@ -20,6 +20,8 @@ const PATH = {
 	CANDIDATE_CONFIG: "/var/run/shinra/config.candidate.json",
 	RUNTIME_STATE: "/var/run/shinra/runtime.state.json",
 	AUTO_TASK_STATE: "/var/run/shinra/auto-task.state.json",
+	AUTO_TASK_SCRIPT: "/usr/libexec/shinra-auto-task",
+	CRON_ROOT: "/etc/crontabs/root",
 	JOB_STATE: "/var/run/shinra/job-state.json",
 	LAST_APPLY_RESULT: "/var/run/shinra/last-apply-result",
 	LAST_ERROR: "/var/run/shinra/last-error.log",
@@ -32,13 +34,23 @@ const PATH = {
 const BIN = {
 	SING_BOX: "sing-box",
 	INIT: "/etc/init.d/shinra",
-	TIMEOUT: "timeout"
+	TIMEOUT: "timeout",
+	WGET: "wget"
 };
 
 const CLASH_API = {
-	TRAFFIC: "http://127.0.0.1:20123/traffic",
-	CONNECTIONS: "http://127.0.0.1:20123/connections",
-	PROXIES: "http://127.0.0.1:20123/proxies"
+	DEFAULT_EXTERNAL_CONTROLLER: "0.0.0.0:20123"
 };
 
-export { PATH, BIN, CLASH_API };
+const CONTROL_PLANE_PROXY = {
+	TAG: "shinra-control-proxy",
+	LISTEN: "127.0.0.1",
+	PORT: 20124,
+	URL: "http://127.0.0.1:20124"
+};
+
+const AUTO_TASK = {
+	CRON_ENTRY: "5 * * * * /usr/libexec/shinra-auto-task >/dev/null 2>&1"
+};
+
+export { PATH, BIN, CLASH_API, CONTROL_PLANE_PROXY, AUTO_TASK };

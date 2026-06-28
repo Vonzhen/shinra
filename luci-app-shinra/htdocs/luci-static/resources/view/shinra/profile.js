@@ -56,17 +56,25 @@ function profileContent(result) {
 	return result && result.ok && result.data && typeof result.data.content === 'string' ? result.data.content : '';
 }
 
-function sourceUrl(result) {
-	const data = dataOf(result);
-	return data.source && typeof data.source.url === 'string' ? data.source.url : '';
+function sourceData() {
+	const data = dataOf(sourceResult);
+	return data.source || {};
 }
 
-function sourceInputUrl(result) {
-	return sourceUrl(result) || DEFAULT_TEMPLATE_URL;
+function sourceInputUrl() {
+	return sourceData().url || DEFAULT_TEMPLATE_URL;
+}
+
+function sourceFetchStrategy() {
+	return sourceData().fetch_strategy === 'proxy' ? 'proxy' : 'direct';
 }
 
 function sectionStyle() {
 	return 'border: 1px solid #dfe3e8; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; background: #fff;';
+}
+
+function mutedStyle() {
+	return 'color: #667; overflow-wrap: anywhere;';
 }
 
 function statusPill(text, level) {
@@ -89,80 +97,37 @@ function statusPill(text, level) {
 	}, text);
 }
 
-function sourceSettings() {
-	return E('div', { 'style': sectionStyle() }, [
-		E('h3', { 'style': 'margin-top: 0;' }, _('模板同步')),
-		E('div', { 'style': 'color: #667; margin-bottom: .75rem; overflow-wrap: anywhere;' }, _('设置远程 JSON 模板地址，然后同步到 /etc/shinra/main-profile.json。同步前会校验模板，并在替换当前模板前创建备份。')),
-		E('label', {}, [
-			E('div', { 'style': 'font-size: 12px; color: #667; font-weight: 700; margin-bottom: .25rem;' }, _('模板地址')),
-			E('input', {
-				'id': 'shinra-profile-source-url',
-				'class': 'cbi-input-text',
-				'style': 'width: 100%; max-width: 100%; box-sizing: border-box;',
-				'placeholder': DEFAULT_TEMPLATE_URL,
-				'value': sourceInputUrl(sourceResult)
-			})
-		]),
-		E('div', { 'style': 'display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; margin-top: .85rem;' }, [
-			E('button', { 'class': 'btn cbi-button cbi-button-save', 'click': function(ev) { ev.preventDefault(); return saveSource(); } }, _('保存模板地址')),
-			E('button', { 'class': 'btn cbi-button cbi-button-apply', 'click': function(ev) { ev.preventDefault(); return syncRemote(); } }, _('同步模板')),
-			E('span', {
-				'id': 'shinra-profile-action-status',
-				'style': 'color: %s;'.format(actionStatusOk ? '#166534' : '#991b1b')
-			}, actionStatus)
-		])
-	]);
+function actionStatusBox() {
+	return E('div', {
+		'id': 'shinra-profile-action-status',
+		'style': 'display: %s; border: 1px solid %s; border-radius: 8px; padding: .75rem; margin-top: .85rem; background: %s; color: %s; overflow-wrap: anywhere;'.format(
+			actionStatus ? 'block' : 'none',
+			actionStatusOk ? '#bbf7d0' : '#fecaca',
+			actionStatusOk ? '#f0fdf4' : '#fef2f2',
+			actionStatusOk ? '#166534' : '#991b1b'
+		)
+	}, actionStatus);
 }
 
-function profilePreview() {
-	const content = profileContent(profileResult);
-
-	return E('div', { 'style': sectionStyle() }, [
-		E('div', { 'style': 'display: flex; justify-content: space-between; gap: .75rem; align-items: center; flex-wrap: wrap; margin-bottom: .75rem;' }, [
-			E('h3', { 'style': 'margin: 0;' }, _('只读预览')),
-			profileResult && profileResult.ok && dataOf(profileResult).valid !== false ? statusPill(_('有效'), 'ok') : statusPill(_('无效'), 'error')
-		]),
-		E('pre', {
-			'style': 'max-height: 36rem; overflow: auto; padding: .85rem; border-radius: 8px; background: #0f172a; color: #e5e7eb; font-family: monospace; white-space: pre;'
-		}, content || _('没有模板内容。'))
-	]);
-}
-
-function localActions() {
-	return E('div', { 'style': sectionStyle() }, [
-		E('h3', { 'style': 'margin-top: 0;' }, _('本地恢复')),
-		E('div', { 'style': 'color: #667; margin-bottom: .75rem;' }, _('这些操作只影响 main-profile.json 及其备份，不会生成候选配置、应用运行配置或重启 sing-box。')),
-		E('div', { 'style': 'display: flex; gap: .5rem; flex-wrap: wrap;' }, [
-			E('button', { 'class': 'btn cbi-button cbi-button-neutral', 'click': function(ev) { ev.preventDefault(); return rollbackProfile(); } }, _('回滚')),
-			E('button', { 'class': 'btn cbi-button cbi-button-remove', 'click': function(ev) { ev.preventDefault(); return restoreDefault(); } }, _('恢复内置模板'))
-		])
-	]);
-}
-
-function setStatus(text) {
+function setStatus(text, ok) {
 	actionStatus = text || '';
-	actionStatusOk = true;
-	const node = document.getElementById('shinra-profile-action-status');
-	if (node) {
-		node.textContent = actionStatus;
-		node.style.color = '#166534';
-	}
-}
+	actionStatusOk = ok !== false;
 
-function setError(text) {
-	actionStatus = text || '';
-	actionStatusOk = false;
 	const node = document.getElementById('shinra-profile-action-status');
-	if (node) {
-		node.textContent = actionStatus;
-		node.style.color = '#991b1b';
-	}
+	if (!node)
+		return;
+
+	node.textContent = actionStatus;
+	node.style.display = actionStatus ? 'block' : 'none';
+	node.style.borderColor = actionStatusOk ? '#bbf7d0' : '#fecaca';
+	node.style.background = actionStatusOk ? '#f0fdf4' : '#fef2f2';
+	node.style.color = actionStatusOk ? '#166534' : '#991b1b';
 }
 
 function resultError(result, fallback) {
 	if (result && (result.message || result.code))
-		return '%s: %s'.format(result.message || result.code || fallback || _('操作失败'), result.detail || result.code || _('无详细信息'));
-	return fallback || _('操作失败');
+		return '%s: %s'.format(result.message || result.code || fallback || _('\u64cd\u4f5c\u5931\u8d25'), result.detail || result.code || _('\u65e0\u8be6\u7ec6\u4fe1\u606f'));
+	return fallback || _('\u64cd\u4f5c\u5931\u8d25');
 }
 
 function refreshPage() {
@@ -175,17 +140,20 @@ function refreshPage() {
 		redraw();
 		return results;
 	}).catch(function(error) {
-		setError(error.message || String(error));
+		setStatus(error.message || String(error), false);
 	});
 }
 
 function saveSource() {
 	const input = document.getElementById('shinra-profile-source-url');
+	const strategy = document.getElementById('shinra-profile-fetch-strategy');
 	const source = {
 		schema_version: 1,
-		url: input ? input.value : ''
+		url: input ? input.value : '',
+		fetch_strategy: strategy && strategy.value === 'proxy' ? 'proxy' : 'direct'
 	};
-	setStatus(_('正在保存...'));
+
+	setStatus(_('\u6b63\u5728\u4fdd\u5b58\u6a21\u677f\u6e90...'), true);
 
 	return callProfileSourceSave(JSON.stringify(source)).then(function(result) {
 		if (result && result.ok) {
@@ -193,64 +161,122 @@ function saveSource() {
 				ok: true,
 				data: dataOf(result)
 			};
-			setStatus(_('模板地址已保存。准备替换 main-profile.json 时，请执行同步模板。'));
+			setStatus(_('\u6a21\u677f\u6e90\u5df2\u4fdd\u5b58\u3002\u9700\u8981\u66ff\u6362 main-profile.json \u65f6\uff0c\u8bf7\u6267\u884c\u540c\u6b65\u6a21\u677f\u3002'), true);
 			redraw();
 		} else {
-			setError(resultError(result, _('保存失败')));
+			setStatus(resultError(result, _('\u4fdd\u5b58\u5931\u8d25')), false);
 		}
 		return result;
 	}).catch(function(error) {
-		setError(error.message || String(error));
+		setStatus(error.message || String(error), false);
 	});
 }
 
 function syncRemote() {
-	setStatus(_('正在同步...'));
+	setStatus(_('\u6b63\u5728\u540c\u6b65\u6a21\u677f...'), true);
+
 	return callProfileSyncRemote().then(function(result) {
 		if (result && result.ok) {
-			setStatus(_('模板已同步。准备使用更新后的模板时，请生成候选配置。'));
+			setStatus(_('\u6a21\u677f\u5df2\u540c\u6b65\u3002\u51c6\u5907\u4f7f\u7528\u65b0\u6a21\u677f\u65f6\uff0c\u8bf7\u751f\u6210\u5019\u9009\u914d\u7f6e\u3002'), true);
 			return refreshPage();
 		}
 
-		setError(resultError(result, _('同步失败')));
+		setStatus(resultError(result, _('\u540c\u6b65\u5931\u8d25')), false);
 		return result;
 	}).catch(function(error) {
-		setError(error.message || String(error));
+		setStatus(error.message || String(error), false);
 	});
 }
 
 function rollbackProfile() {
-	if (!window.confirm(_('回滚到上一个模板备份吗？运行配置不会改变。')))
+	if (!window.confirm(_('\u56de\u6eda\u5230\u4e0a\u4e00\u4e2a\u6a21\u677f\u5907\u4efd\u5417\uff1f\u8fd0\u884c\u914d\u7f6e\u4e0d\u4f1a\u6539\u53d8\u3002')))
 		return Promise.resolve();
 
-	setStatus(_('正在回滚...'));
+	setStatus(_('\u6b63\u5728\u56de\u6eda\u6a21\u677f...'), true);
+
 	return callProfileRollback().then(function(result) {
 		if (result && result.ok) {
-			setStatus(_('模板已回滚。准备使用时，请生成候选配置。'));
+			setStatus(_('\u6a21\u677f\u5df2\u56de\u6eda\u3002\u51c6\u5907\u4f7f\u7528\u65f6\uff0c\u8bf7\u751f\u6210\u5019\u9009\u914d\u7f6e\u3002'), true);
 			return refreshPage();
 		}
-		setError(resultError(result, _('回滚失败')));
+		setStatus(resultError(result, _('\u56de\u6eda\u5931\u8d25')), false);
 		return result;
 	}).catch(function(error) {
-		setError(error.message || String(error));
+		setStatus(error.message || String(error), false);
 	});
 }
 
 function restoreDefault() {
-	if (!window.confirm(_('恢复内置模板吗？当前模板会被备份。')))
+	if (!window.confirm(_('\u6062\u590d\u5185\u7f6e\u6a21\u677f\u5417\uff1f\u5f53\u524d\u6a21\u677f\u4f1a\u88ab\u5907\u4efd\u3002')))
 		return Promise.resolve();
 
-	setStatus(_('正在恢复内置模板...'));
+	setStatus(_('\u6b63\u5728\u6062\u590d\u5185\u7f6e\u6a21\u677f...'), true);
+
 	return callProfileRestoreDefault().then(function(result) {
 		if (result && result.ok) {
-			setStatus(_('内置模板已恢复。准备使用时，请生成候选配置。'));
+			setStatus(_('\u5185\u7f6e\u6a21\u677f\u5df2\u6062\u590d\u3002\u51c6\u5907\u4f7f\u7528\u65f6\uff0c\u8bf7\u751f\u6210\u5019\u9009\u914d\u7f6e\u3002'), true);
 			return refreshPage();
 		}
-		setError(resultError(result, _('恢复失败')));
+		setStatus(resultError(result, _('\u6062\u590d\u5931\u8d25')), false);
 		return result;
 	}).catch(function(error) {
-		setError(error.message || String(error));
+		setStatus(error.message || String(error), false);
 	});
+}
+
+function sourceSettings() {
+	return E('div', { 'style': sectionStyle() }, [
+		E('h3', { 'style': 'margin-top: 0;' }, _('\u6a21\u677f\u540c\u6b65')),
+		E('div', { 'style': mutedStyle() + ' margin-bottom: .75rem;' }, _('\u8bbe\u7f6e\u8fdc\u7a0b JSON \u6a21\u677f\u5730\u5740\uff0c\u5e76\u540c\u6b65\u5230 /etc/shinra/main-profile.json\u3002\u540c\u6b65\u4f1a\u6821\u9a8c\u6a21\u677f\uff0c\u5e76\u5728\u66ff\u6362\u524d\u521b\u5efa\u5907\u4efd\u3002')),
+		E('label', {}, [
+			E('div', { 'style': 'font-size: 12px; color: #667; font-weight: 700; margin-bottom: .25rem;' }, _('\u6a21\u677f\u5730\u5740')),
+			E('input', {
+				'id': 'shinra-profile-source-url',
+				'class': 'cbi-input-text',
+				'style': 'width: 100%; max-width: 100%; box-sizing: border-box;',
+				'placeholder': DEFAULT_TEMPLATE_URL,
+				'value': sourceInputUrl()
+			})
+		]),
+		E('label', { 'style': 'display: block; margin-top: .75rem;' }, [
+			E('div', { 'style': 'font-size: 12px; color: #667; font-weight: 700; margin-bottom: .25rem;' }, _('\u4e0b\u8f7d\u7b56\u7565')),
+			E('select', { 'id': 'shinra-profile-fetch-strategy', 'class': 'cbi-input-select', 'style': 'min-width: 220px;' }, [
+				E('option', { 'value': 'direct', 'selected': sourceFetchStrategy() === 'direct' ? 'selected' : null }, _('\u76f4\u8fde')),
+				E('option', { 'value': 'proxy', 'selected': sourceFetchStrategy() === 'proxy' ? 'selected' : null }, _('\u4ee3\u7406'))
+			])
+		]),
+		E('div', { 'style': 'display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; margin-top: .85rem;' }, [
+			E('button', { 'type': 'button', 'class': 'btn cbi-button cbi-button-save', 'click': function(ev) { ev.preventDefault(); return saveSource(); } }, _('\u4fdd\u5b58\u6a21\u677f\u6e90')),
+			E('button', { 'type': 'button', 'class': 'btn cbi-button cbi-button-apply', 'click': function(ev) { ev.preventDefault(); return syncRemote(); } }, _('\u540c\u6b65\u6a21\u677f'))
+		]),
+		actionStatusBox()
+	]);
+}
+
+function localActions() {
+	return E('div', { 'style': sectionStyle() }, [
+		E('h3', { 'style': 'margin-top: 0;' }, _('\u672c\u5730\u6062\u590d')),
+		E('div', { 'style': mutedStyle() + ' margin-bottom: .75rem;' }, _('\u8fd9\u4e9b\u64cd\u4f5c\u53ea\u4fee\u6539 main-profile.json \u53ca\u5176\u5907\u4efd\uff0c\u4e0d\u4f1a\u751f\u6210\u5019\u9009\u914d\u7f6e\u3001\u5e94\u7528\u8fd0\u884c\u914d\u7f6e\u6216\u91cd\u542f sing-box\u3002')),
+		E('div', { 'style': 'display: flex; gap: .5rem; flex-wrap: wrap;' }, [
+			E('button', { 'type': 'button', 'class': 'btn cbi-button cbi-button-neutral', 'click': function(ev) { ev.preventDefault(); return rollbackProfile(); } }, _('\u56de\u6eda')),
+			E('button', { 'type': 'button', 'class': 'btn cbi-button cbi-button-remove', 'click': function(ev) { ev.preventDefault(); return restoreDefault(); } }, _('\u6062\u590d\u5185\u7f6e\u6a21\u677f'))
+		])
+	]);
+}
+
+function profilePreview() {
+	const content = profileContent(profileResult);
+	const valid = profileResult && profileResult.ok && dataOf(profileResult).valid !== false;
+
+	return E('div', { 'style': sectionStyle() }, [
+		E('div', { 'style': 'display: flex; justify-content: space-between; gap: .75rem; align-items: center; flex-wrap: wrap; margin-bottom: .75rem;' }, [
+			E('h3', { 'style': 'margin: 0;' }, _('\u53ea\u8bfb\u9884\u89c8')),
+			valid ? statusPill(_('\u6709\u6548'), 'ok') : statusPill(_('\u65e0\u6548'), 'error')
+		]),
+		E('pre', {
+			'style': 'max-height: 36rem; overflow: auto; padding: .85rem; border-radius: 8px; background: #0f172a; color: #e5e7eb; font-family: monospace; white-space: pre;'
+		}, content || _('\u6ca1\u6709\u6a21\u677f\u5185\u5bb9\u3002'))
+	]);
 }
 
 function redraw() {
@@ -261,8 +287,8 @@ function redraw() {
 
 function renderPage() {
 	return E('div', { 'id': 'shinra-profile-root', 'class': 'cbi-map' }, [
-		E('h2', {}, _('模板')),
-		E('p', {}, _('只读预览 main-profile.json，并支持远程模板同步。')),
+		E('h2', {}, _('\u6a21\u677f')),
+		E('p', {}, _('\u53ea\u8bfb\u9884\u89c8 main-profile.json\uff0c\u5e76\u652f\u6301\u8fdc\u7a0b\u6a21\u677f\u540c\u6b65\u3002')),
 		sourceSettings(),
 		localActions(),
 		profilePreview()
@@ -282,5 +308,9 @@ return view.extend({
 		sourceResult = results && results[1] ? results[1] : {};
 
 		return renderPage();
-	}
+	},
+
+	handleSaveApply: null,
+	handleSave: null,
+	handleReset: null
 });
