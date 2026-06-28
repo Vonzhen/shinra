@@ -453,8 +453,8 @@ function validate_tun_contract(profile) {
 		tun_contract_fail("tun-in auto_redirect must be true");
 	if (tun.dns_mode != "hijack")
 		tun_contract_fail("tun-in dns_mode must be hijack");
-	if (tun.stack != "system")
-		tun_contract_fail("tun-in stack must be system");
+	if (tun.stack != "system" && tun.stack != "mixed")
+        tun_contract_fail("tun-in stack must be system or mixed");
 
 	if (type(profile.route) != "object" || profile.route == null || profile.route.auto_detect_interface != true)
 		tun_contract_fail("route.auto_detect_interface must be true");
