@@ -4,11 +4,11 @@
 
 'use strict';
 
-import { PATH, CLASH_API } from 'shinra.core.constants';
+import { PATH } from 'shinra.core.constants';
 import { Success, Fail } from 'shinra.core.result';
 import { ERR } from 'shinra.core.error';
 import { read_text, parse_json_object, json_escape, json_stringify } from 'shinra.core.utils';
-import { http_get_json, http_put_json } from 'shinra.clash';
+import { http_get_json, http_put_json, clash_api_url } from 'shinra.clash';
 
 function is_selector(proxy) {
 	if (type(proxy) != "object" || proxy == null)
@@ -149,7 +149,7 @@ function option_meta_list(proxies, names) {
 }
 
 function load_selectors(trace_id) {
-	let data = http_get_json(trace_id, CLASH_API.PROXIES);
+	let data = http_get_json(trace_id, clash_api_url("/proxies"));
 	let selectors = [];
 
 	if (type(data.proxies) != "object" || data.proxies == null)
@@ -277,7 +277,7 @@ function path_segment_escape(value) {
 }
 
 function selector_url(selector) {
-	return CLASH_API.PROXIES + "/" + path_segment_escape(selector);
+	return clash_api_url("/proxies") + "/" + path_segment_escape(selector);
 }
 
 function delay_url(selector) {
@@ -309,7 +309,7 @@ function selector_delay_test(trace_id, req) {
 	try {
 		validate_delay_input(req);
 
-		let data = http_get_json(trace_id, CLASH_API.PROXIES);
+		let data = http_get_json(trace_id, clash_api_url("/proxies"));
 		if (type(data.proxies) != "object" || data.proxies == null)
 			return Fail(ERR.E_SELECTOR_NOT_FOUND, "Selector target not found", trace_id, req.selector);
 

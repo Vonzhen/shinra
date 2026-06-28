@@ -4,11 +4,10 @@
 
 'use strict';
 
-import { CLASH_API } from 'shinra.core.constants';
 import { Success, Fail } from 'shinra.core.result';
 import { ERR } from 'shinra.core.error';
 import { observe_runtime } from 'shinra.runtime';
-import { http_get_json } from 'shinra.clash';
+import { http_get_json, clash_api_url } from 'shinra.clash';
 
 function empty_clash_api(reason) {
 	return {
@@ -34,7 +33,7 @@ function number_or_zero(value) {
 }
 
 function observe_traffic(trace_id) {
-	let data = http_get_json(trace_id, CLASH_API.TRAFFIC);
+	let data = http_get_json(trace_id, clash_api_url("/traffic"));
 	return {
 		up: number_or_zero(data.up),
 		down: number_or_zero(data.down)
@@ -42,7 +41,7 @@ function observe_traffic(trace_id) {
 }
 
 function observe_connections(trace_id) {
-	let data = http_get_json(trace_id, CLASH_API.CONNECTIONS);
+	let data = http_get_json(trace_id, clash_api_url("/connections"));
 	let count = 0;
 
 	if (type(data.connections) == "array")
@@ -62,7 +61,7 @@ function is_selector(proxy) {
 }
 
 function observe_proxies(trace_id) {
-	let data = http_get_json(trace_id, CLASH_API.PROXIES);
+	let data = http_get_json(trace_id, clash_api_url("/proxies"));
 	let selectors = [];
 
 	if (type(data.proxies) == "object" && data.proxies != null) {

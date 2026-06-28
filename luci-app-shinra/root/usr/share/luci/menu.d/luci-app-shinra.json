@@ -35,12 +35,12 @@
       "path": "shinra/resources"
     }
   },
-  "admin/services/shinra/logs": {
+  "admin/services/shinra/diagnostics": {
     "title": "\u7f51\u7edc\u8bca\u65ad",
     "order": 40,
     "action": {
       "type": "view",
-      "path": "shinra/logs"
+      "path": "shinra/diagnostics"
     }
   }
 }

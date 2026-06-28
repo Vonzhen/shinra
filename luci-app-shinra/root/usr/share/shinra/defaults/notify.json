@@ -6,6 +6,7 @@
     "bot_token": "",
     "chat_id": "",
     "location_name": "Shinra",
+    "fetch_strategy": "proxy",
     "timeout_sec": 15
   }
 }

@@ -58,6 +58,7 @@ function notifySettings() {
 			bot_token: typeof telegram.bot_token === 'string' ? telegram.bot_token : '',
 			chat_id: typeof telegram.chat_id === 'string' ? telegram.chat_id : '',
 			location_name: typeof telegram.location_name === 'string' && telegram.location_name !== '' ? telegram.location_name : 'Shinra',
+			fetch_strategy: telegram.fetch_strategy === 'direct' ? 'direct' : 'proxy',
 			timeout_sec: Number(telegram.timeout_sec || 15)
 		}
 	};
@@ -84,6 +85,7 @@ function settingsFromInputs() {
 			bot_token: document.getElementById('shinra-notify-token') ? document.getElementById('shinra-notify-token').value : '',
 			chat_id: document.getElementById('shinra-notify-chat') ? document.getElementById('shinra-notify-chat').value : '',
 			location_name: document.getElementById('shinra-notify-location') ? document.getElementById('shinra-notify-location').value : 'Shinra',
+			fetch_strategy: document.getElementById('shinra-notify-fetch-strategy') && document.getElementById('shinra-notify-fetch-strategy').value === 'direct' ? 'direct' : 'proxy',
 			timeout_sec: document.getElementById('shinra-notify-timeout') ? Number(document.getElementById('shinra-notify-timeout').value || 15) : 15
 		}
 	};
@@ -164,10 +166,10 @@ function renderPage() {
 			]),
 			field(_('\u901a\u77e5'), E('select', { 'id': 'shinra-notify-mode', 'class': 'cbi-input-select', 'style': 'min-width: 220px;' }, [
 				E('option', { 'value': 'fail_only', 'selected': tg.mode === 'fail_only' ? 'selected' : null }, _('\u4ec5\u5931\u8d25')),
-				E('option', { 'value': 'all', 'selected': tg.mode === 'all' ? 'selected' : null }, _('\u65e0\u8be6\u7ec6\u4fe1\u606f'))
+				E('option', { 'value': 'all', 'selected': tg.mode === 'all' ? 'selected' : null }, _('\u6240\u6709\u7ed3\u679c'))
 			]), _('\u65e0\u4eba\u503c\u5b88\u66f4\u65b0\u5efa\u8bae\u53ea\u901a\u77e5\u5931\u8d25\u3002')),
 			E('div', { 'style': 'display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: .75rem;' }, [
-				field(_('Bot Token'), E('input', {
+				field(_('\u673a\u5668\u4eba Token'), E('input', {
 					'id': 'shinra-notify-token',
 					'class': 'cbi-input-password',
 					'type': 'password',
@@ -175,19 +177,27 @@ function renderPage() {
 					'value': tg.bot_token || '',
 					'placeholder': _('123456:ABC...')
 				}), _('\u53ef\u5e26 bot \u524d\u7f00\u3002')),
-				field(_('Chat ID'), E('input', {
+				field(_('\u4f1a\u8bdd ID'), E('input', {
 					'id': 'shinra-notify-chat',
 					'class': 'cbi-input-text',
 					'style': 'width: 100%; box-sizing: border-box;',
 					'value': tg.chat_id || ''
-				}), _('\u7528\u6237\u3001\u7fa4\u7ec4\u6216\u9891\u9053 Chat ID\u3002')),
+				}), _('\u7528\u6237\u3001\u7fa4\u7ec4\u6216\u9891\u9053\u7684 Chat ID\u3002')),
 				field(_('\u4f4d\u7f6e\u540d\u79f0'), E('input', {
 					'id': 'shinra-notify-location',
 					'class': 'cbi-input-text',
 					'style': 'width: 100%; box-sizing: border-box;',
 					'value': tg.location_name || 'Shinra'
 				}), _('\u663e\u793a\u5728\u6d88\u606f\u6807\u9898\u4e2d\u3002')),
-				field(_('\u901a\u77e5'), E('input', {
+				field(_('\u8bf7\u6c42\u7b56\u7565'), E('select', {
+					'id': 'shinra-notify-fetch-strategy',
+					'class': 'cbi-input-select',
+					'style': 'width: 100%; box-sizing: border-box;'
+				}, [
+					E('option', { 'value': 'proxy', 'selected': tg.fetch_strategy === 'proxy' ? 'selected' : null }, _('\u4ee3\u7406')),
+					E('option', { 'value': 'direct', 'selected': tg.fetch_strategy === 'direct' ? 'selected' : null }, _('\u76f4\u8fde'))
+				]), _('Telegram \u9ed8\u8ba4\u5efa\u8bae\u8d70\u4ee3\u7406\u3002')),
+				field(_('\u8d85\u65f6\u65f6\u95f4'), E('input', {
 					'id': 'shinra-notify-timeout',
 					'class': 'cbi-input-text',
 					'type': 'number',
@@ -195,7 +205,7 @@ function renderPage() {
 					'max': '60',
 					'style': 'width: 100%; box-sizing: border-box;',
 					'value': tg.timeout_sec || 15
-				}), _('\u901a\u77e5'))
+				}), _('\u5355\u4f4d\uff1a\u79d2\u3002'))
 			]),
 			E('div', { 'style': 'display: flex; gap: .5rem; flex-wrap: wrap; margin-top: .85rem;' }, [
 				E('button', { 'class': 'btn cbi-button cbi-button-save', 'click': function(ev) { ev.preventDefault(); return saveSettings(); } }, _('\u4fdd\u5b58\u901a\u77e5\u8bbe\u7f6e')),

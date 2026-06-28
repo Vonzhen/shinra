@@ -5,7 +5,7 @@
 'use strict';
 
 import { stat } from 'fs';
-import { PATH, BIN } from 'shinra.core.constants';
+import { PATH, BIN, CONTROL_PLANE_PROXY } from 'shinra.core.constants';
 import { Success, Fail } from 'shinra.core.result';
 import { ERR } from 'shinra.core.error';
 import { read_text, write_runtime_text_atomic, parse_json_object, ensure_runtime_dir, file_exists, json_stringify, ExecResult } from 'shinra.core.utils';
@@ -411,6 +411,55 @@ function direct_outbound_tag(profile) {
 	return "";
 }
 
+function tun_contract_fail(message) {
+	die("TUN_CONTRACT: " + message);
+}
+
+function validate_tun_contract(profile) {
+	if (type(profile.inbounds) != "array")
+		tun_contract_fail("Profile must contain inbounds array");
+
+	let tun_count = 0;
+	let tun = null;
+
+	for (let inbound in profile.inbounds) {
+		if (type(inbound) != "object" || inbound == null)
+			continue;
+
+		if (inbound.type == "redirect" || inbound.type == "tproxy")
+			tun_contract_fail("redirect/tproxy inbounds are not supported");
+
+		if (inbound.type != "tun")
+			continue;
+
+		tun_count = tun_count + 1;
+		tun = inbound;
+	}
+
+	if (tun_count == 0)
+		tun_contract_fail("Profile must contain tun-in inbound");
+	if (tun_count > 1)
+		tun_contract_fail("Profile must contain exactly one tun inbound");
+
+	if (tun.tag != "tun-in")
+		tun_contract_fail("tun inbound tag must be tun-in");
+	if (type(tun.interface_name) != "string" || tun.interface_name == "")
+		tun_contract_fail("tun-in interface_name must be set");
+	if (tun.auto_route != true)
+		tun_contract_fail("tun-in auto_route must be true");
+	if (tun.strict_route != true)
+		tun_contract_fail("tun-in strict_route must be true");
+	if (tun.auto_redirect != true)
+		tun_contract_fail("tun-in auto_redirect must be true");
+	if (tun.dns_mode != "hijack")
+		tun_contract_fail("tun-in dns_mode must be hijack");
+	if (tun.stack != "system")
+		tun_contract_fail("tun-in stack must be system");
+
+	if (type(profile.route) != "object" || profile.route == null || profile.route.auto_detect_interface != true)
+		tun_contract_fail("route.auto_detect_interface must be true");
+}
+
 function validated_main_selector_tag(profile) {
 	let count = 0;
 	let tag = "";
@@ -667,7 +716,7 @@ function localize_rulesets(profile, policy) {
 		missing: 0
 	};
 
-	if (mode != "auto" && mode != "local")
+	if (mode != "remote" && mode != "auto" && mode != "local")
 		die("Unsupported Rule Set mode: " + mode);
 
 	if (type(profile.route) != "object" || profile.route == null || type(profile.route.rule_set) != "array")
@@ -713,13 +762,32 @@ function ensure_object_field(parent, key) {
 	return parent[key];
 }
 
+function existing_clash_api(profile) {
+	if (type(profile.experimental) != "object" || profile.experimental == null || type(profile.experimental) == "array")
+		return null;
+	if (type(profile.experimental.clash_api) != "object" || profile.experimental.clash_api == null || type(profile.experimental.clash_api) == "array")
+		return null;
+	if (type(profile.experimental.clash_api.external_controller) != "string" || profile.experimental.clash_api.external_controller == "")
+		return null;
+	return profile.experimental.clash_api;
+}
+
 function apply_panel_api_policy(profile) {
 	let policy = zashboard_panel_policy();
+	let existing = existing_clash_api(profile);
 	let result = {
-		enabled: policy.enabled == true ? true : false,
+		enabled: policy.enabled == true || existing != null ? true : false,
 		external_controller: "",
-		secret_configured: false
+		secret_configured: false,
+		source: ""
 	};
+
+	if (existing != null) {
+		result.external_controller = existing.external_controller;
+		result.secret_configured = type(existing.secret) == "string" && existing.secret != "";
+		result.source = "profile";
+		return result;
+	}
 
 	if (!result.enabled)
 		return result;
@@ -731,6 +799,45 @@ function apply_panel_api_policy(profile) {
 
 	result.external_controller = policy.external_controller;
 	result.secret_configured = policy.secret != "";
+	result.source = "panel";
+	return result;
+}
+
+function ensure_control_plane_proxy_inbound(profile) {
+	let result = {
+		inserted: false,
+		existing: false,
+		tag: CONTROL_PLANE_PROXY.TAG,
+		listen: CONTROL_PLANE_PROXY.LISTEN,
+		port: CONTROL_PLANE_PROXY.PORT
+	};
+
+	if (type(profile.inbounds) != "array")
+		profile.inbounds = [];
+
+	for (let inbound in profile.inbounds) {
+		if (type(inbound) != "object" || inbound == null)
+			continue;
+
+		if (inbound.tag == CONTROL_PLANE_PROXY.TAG) {
+			inbound.type = "mixed";
+			inbound.listen = CONTROL_PLANE_PROXY.LISTEN;
+			inbound.listen_port = CONTROL_PLANE_PROXY.PORT;
+			result.existing = true;
+			return result;
+		}
+
+		if (inbound.listen == CONTROL_PLANE_PROXY.LISTEN && int(inbound.listen_port || 0) == CONTROL_PLANE_PROXY.PORT)
+			die("Control-plane proxy endpoint is already used by inbound: " + (inbound.tag || ""));
+	}
+
+	push(profile.inbounds, {
+		type: "mixed",
+		tag: CONTROL_PLANE_PROXY.TAG,
+		listen: CONTROL_PLANE_PROXY.LISTEN,
+		listen_port: CONTROL_PLANE_PROXY.PORT
+	});
+	result.inserted = true;
 	return result;
 }
 
@@ -755,6 +862,8 @@ function generate_candidate(trace_id, req) {
 		merge_outbounds(profile, groups, nodes);
 		let ruleset = localize_rulesets(profile, subscriptions);
 		let panel_api = apply_panel_api_policy(profile);
+		let control_proxy = ensure_control_plane_proxy_inbound(profile);
+		validate_tun_contract(profile);
 		let stripped = strip_extensions(profile);
 		validate_references(profile);
 
@@ -780,11 +889,19 @@ function generate_candidate(trace_id, req) {
 			panel_api_enabled: panel_api.enabled,
 			panel_api_external_controller: panel_api.external_controller,
 			panel_api_secret_configured: panel_api.secret_configured,
+			panel_api_source: panel_api.source,
+			control_proxy_inserted: control_proxy.inserted,
+			control_proxy_existing: control_proxy.existing,
+			control_proxy_tag: control_proxy.tag,
+			control_proxy_listen: control_proxy.listen,
+			control_proxy_port: control_proxy.port,
 			stripped_extensions: stripped,
 			outbounds: length(profile.outbounds)
 		}, 200, trace_id, "Candidate generated");
 	} catch (e) {
 		let err = "" + e;
+		if (substr(err, 0, 13) == "TUN_CONTRACT:")
+			return Fail(ERR.E_TUN_CONTRACT_FAILED, "Profile TUN contract failed", trace_id, substr(err, 13));
 		return Fail(ERR.E_GENERATE_FAILED, "Failed to generate Candidate", trace_id, err);
 	}
 }

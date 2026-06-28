@@ -76,6 +76,11 @@ function repositoryOf() {
 	};
 }
 
+function sourceFetchStrategy() {
+	const source = sourceOf();
+	return source.fetch_strategy === 'proxy' ? 'proxy' : 'direct';
+}
+
 function installedOf() {
 	const source = sourceOf();
 	return source.installed || {
@@ -107,6 +112,10 @@ function panelApiOf() {
 	};
 }
 
+function apiAccessHint(api) {
+	return _('Zashboard 将使用上方 Clash API 地址：%s。修改后需要重新生成并应用配置。').format(api.external_controller || '0.0.0.0:20123');
+}
+
 function resultMessage(result, fallback) {
 	if (result && result.ok)
 		return fallback || result.message || _('完成');
@@ -128,6 +137,10 @@ function loadErrorMessage() {
 
 function sectionStyle() {
 	return 'border: 1px solid #dfe3e8; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; background: #fff;';
+}
+
+function panelResponsibilityText() {
+	return _('Zashboard 负责策略组切换、URLTest 延迟和实时运行时交互。Shinra 负责面板资源和生成 Clash API 端点。');
 }
 
 function valueText(value) {
@@ -198,6 +211,13 @@ function repositorySettings() {
 				'value': repo.proxy_prefix
 			})
 		]),
+		E('label', { 'style': 'display: block; margin-top: .75rem;' }, [
+			E('div', { 'style': 'font-size: 12px; color: #667; font-weight: 700; margin-bottom: .25rem;' }, _('下载策略')),
+			E('select', { 'id': 'shinra-zashboard-fetch-strategy', 'class': 'cbi-input-select', 'style': 'min-width: 220px;' }, [
+				E('option', { 'value': 'direct', 'selected': sourceFetchStrategy() === 'direct' ? 'selected' : null }, _('直连')),
+				E('option', { 'value': 'proxy', 'selected': sourceFetchStrategy() === 'proxy' ? 'selected' : null }, _('代理'))
+			])
+		]),
 		E('div', { 'style': 'display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; margin-top: .85rem;' }, [
 			E('button', { 'class': 'btn cbi-button cbi-button-save', 'click': function(ev) { ev.preventDefault(); return saveSource(); } }, _('\u4fdd\u5b58\u8bbe\u7f6e')),
 			E('button', { 'class': 'btn cbi-button cbi-button-neutral', 'click': function(ev) { ev.preventDefault(); return checkUpdate(); } }, _('检查最新版本')),
@@ -216,7 +236,7 @@ function apiSettings() {
 
 	return E('div', { 'style': sectionStyle() }, [
 		E('h3', { 'style': 'margin-top: 0;' }, _('Clash API 访问')),
-		E('div', { 'style': 'color: #667; margin-bottom: .75rem; overflow-wrap: anywhere;' }, _('Zashboard 是默认策略组和运行时面板，因此默认启用局域网 Clash API。修改会影响下一次生成的候选配置，并在应用后生效。')),
+		E('div', { 'style': 'color: #667; margin-bottom: .75rem; overflow-wrap: anywhere;' }, _('Profile template experimental.clash_api is preferred. These settings are used only as a generation fallback when the template has no Clash API endpoint. Changes take effect after Generate and Apply.')),
 		E('label', { 'style': 'display: flex; align-items: center; gap: .5rem; margin-bottom: .75rem;' }, [
 			E('input', {
 				'id': 'shinra-zashboard-api-enabled',
@@ -254,7 +274,95 @@ function apiSettings() {
 			}),
 			E('span', {}, _('允许私有局域网空密钥'))
 		]),
-		E('div', { 'style': 'color: #92400e; background: #fef3c7; border-radius: 8px; padding: .65rem; margin-top: .75rem;' }, _('在 Zashboard 中使用这个 API 地址：http://<router-lan-ip>:20123。私有局域网可留空密钥。修改后需要生成并应用配置。'))
+		E('div', { 'style': 'color: #92400e; background: #fef3c7; border-radius: 8px; padding: .65rem; margin-top: .75rem;' }, apiAccessHint(api))
+	]);
+}
+
+function apiSettingsLocalized() {
+	const api = panelApiOf();
+
+	return E('div', { 'style': sectionStyle() }, [
+		E('h3', { 'style': 'margin-top: 0;' }, _('Clash API 访问')),
+		E('div', { 'style': 'color: #667; margin-bottom: .75rem; overflow-wrap: anywhere;' }, _('优先使用模板中的 experimental.clash_api 配置。仅当模板未配置 Clash API 时，才使用这里的设置作为生成兜底。修改后需要重新生成并应用配置。')),
+		E('label', { 'style': 'display: flex; align-items: center; gap: .5rem; margin-bottom: .75rem;' }, [
+			E('input', {
+				'id': 'shinra-zashboard-api-enabled',
+				'type': 'checkbox',
+				'checked': api.enabled ? 'checked' : null
+			}),
+			E('span', {}, _('为 Zashboard 启用局域网 Clash API'))
+		]),
+		E('div', { 'style': 'display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: .75rem;' }, [
+			E('label', {}, [
+				E('div', { 'style': 'font-size: 12px; color: #667; font-weight: 700; margin-bottom: .25rem;' }, _('Clash API 地址')),
+				E('input', {
+					'id': 'shinra-zashboard-api-controller',
+					'class': 'cbi-input-text',
+					'style': 'width: 100%; box-sizing: border-box;',
+					'value': api.external_controller || '0.0.0.0:20123'
+				})
+			]),
+			E('label', {}, [
+				E('div', { 'style': 'font-size: 12px; color: #667; font-weight: 700; margin-bottom: .25rem;' }, _('Clash API 密钥')),
+				E('input', {
+					'id': 'shinra-zashboard-api-secret',
+					'class': 'cbi-input-text',
+					'style': 'width: 100%; box-sizing: border-box;',
+					'value': api.secret || '',
+					'placeholder': _('私有局域网可留空')
+				})
+			])
+		]),
+		E('label', { 'style': 'display: flex; align-items: center; gap: .5rem; margin-top: .75rem;' }, [
+			E('input', {
+				'id': 'shinra-zashboard-api-empty-secret',
+				'type': 'checkbox',
+				'checked': api.allow_empty_secret !== false ? 'checked' : null
+			}),
+			E('span', {}, _('允许私有局域网使用空密钥'))
+		]),
+		E('div', { 'style': 'color: #92400e; background: #fef3c7; border-radius: 8px; padding: .65rem; margin-top: .75rem;' }, apiAccessHint(api))
+	]);
+}
+
+function zashboardPanelFrame() {
+	const status = dataOf(statusResult);
+	const header = E('div', { 'style': 'display: flex; align-items: center; justify-content: space-between; gap: .5rem; flex-wrap: nowrap; margin-bottom: .5rem;' }, [
+		E('h3', { 'style': 'margin: 0; font-size: 16px;' }, _('Zashboard')),
+		status.installed ? E('a', {
+			'href': '/shinra/zashboard/',
+			'target': '_blank',
+			'rel': 'noopener noreferrer',
+			'title': _('在新标签页打开'),
+			'aria-label': _('在新标签页打开'),
+			'style': 'display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 999px; border: 1px solid #dfe3e8; background: #f8fafc; color: #334155; text-decoration: none; font-size: 16px; font-weight: 700; line-height: 1;'
+		}, '↗') : ''
+	]);
+
+	if (!status.installed) {
+		return E('div', { 'style': sectionStyle() }, [
+			header,
+			E('div', { 'style': 'color: #667; margin-bottom: .85rem; overflow-wrap: anywhere;' }, panelResponsibilityText()),
+			E('div', { 'style': 'color: #667; margin-bottom: .85rem;' }, _('尚未安装 Zashboard 面板。请进入管理页检查最新版本并安装面板资源。')),
+			E('button', {
+				'class': 'btn cbi-button cbi-button-apply',
+				'click': function(ev) {
+					ev.preventDefault();
+					activeTab = 'manage';
+					redraw();
+				}
+			}, _('前往管理'))
+		]);
+	}
+
+	return E('div', { 'style': sectionStyle() + ' padding-top: .75rem;' }, [
+		header,
+		E('div', { 'style': 'color: #667; margin-bottom: .85rem; overflow-wrap: anywhere;' }, panelResponsibilityText()),
+		E('iframe', {
+			'src': '/shinra/zashboard/',
+			'style': 'width: 100%; height: min(78vh, 760px); border: 1px solid #dfe3e8; border-radius: 8px; background: #fff;',
+			'loading': 'lazy'
+		})
 	]);
 }
 
@@ -330,6 +438,7 @@ function sourceFromInputs() {
 	return {
 		schema_version: 1,
 		url: current.url || '',
+		fetch_strategy: document.getElementById('shinra-zashboard-fetch-strategy') && document.getElementById('shinra-zashboard-fetch-strategy').value === 'proxy' ? 'proxy' : 'direct',
 		repository: {
 			type: 'github',
 			owner: document.getElementById('shinra-zashboard-repo-owner') ? document.getElementById('shinra-zashboard-repo-owner').value : 'Zephyruso',
@@ -348,9 +457,17 @@ function sourceFromInputs() {
 	};
 }
 
-function saveSource() {
-	setStatus(_('正在处理...'), true);
+function saveSourceContent() {
 	return callZashboardSourceSave(JSON.stringify(sourceFromInputs())).then(function(result) {
+		if (!result || !result.ok)
+			return result;
+		return result;
+	});
+}
+
+function saveSource() {
+	setStatus(_('正在保存设置...'), true);
+	return saveSourceContent().then(function(result) {
 		if (result && result.ok) {
 			setStatus('\u9762\u677f\u8bbe\u7f6e\u5df2\u4fdd\u5b58\u3002', true);
 			return refreshPage().then(function() {
@@ -366,8 +483,8 @@ function saveSource() {
 }
 
 function checkUpdate() {
-	setStatus(_('正在处理...'), true);
-	return saveSource().then(function(saved) {
+	setStatus(_('正在保存设置并检查最新版本...'), true);
+	return saveSourceContent().then(function(saved) {
 		if (!saved || !saved.ok)
 			return saved;
 		return callZashboardUpdateCheck();
@@ -375,7 +492,7 @@ function checkUpdate() {
 		if (result && result.ok) {
 			let data = dataOf(result);
 			let lastCheck = data.last_check || {};
-			let message = lastCheck.version ? _('已检查最新版本：%s').format(lastCheck.version) : _('私有局域网可留空');
+			let message = lastCheck.version ? _('已检查最新版本：%s').format(lastCheck.version) : _('已完成最新版本检查');
 			setStatus(message, true);
 			return refreshPage();
 		}
@@ -388,8 +505,8 @@ function checkUpdate() {
 }
 
 function applyUpdate() {
-	setStatus(_('正在处理...'), true);
-	return saveSource().then(function(saved) {
+	setStatus(_('正在保存设置并下载/更新面板...'), true);
+	return saveSourceContent().then(function(saved) {
 		if (!saved || !saved.ok)
 			return saved;
 		return callZashboardUpdateApply();
@@ -409,7 +526,7 @@ function applyUpdate() {
 function redraw() {
 	const root = document.getElementById('shinra-panel-root');
 	if (root)
-		root.parentNode.replaceChild(renderPage(), root);
+		root.parentNode.replaceChild(renderPanelPage(), root);
 }
 
 function tabButton(tab, label) {
@@ -434,14 +551,14 @@ function tabBar() {
 
 function zashboardTab() {
 	return E('div', {}, [
-		panelFrame()
+		zashboardPanelFrame()
 	]);
 }
 
 function manageTab() {
 	return E('div', {}, [
 		repositorySettings(),
-		apiSettings()
+		apiSettingsLocalized()
 	]);
 }
 
@@ -449,6 +566,15 @@ function activeContent() {
 	if (activeTab === 'manage')
 		return manageTab();
 	return zashboardTab();
+}
+
+function renderPanelPage() {
+	return E('div', { 'id': 'shinra-panel-root', 'class': 'cbi-map' }, [
+		E('h2', {}, _('\u9762\u677f')),
+		tabBar(),
+		inlineResultNode(),
+		activeContent()
+	]);
 }
 
 function renderPage() {
@@ -473,6 +599,6 @@ return view.extend({
 		sourceResult = results && results[0] ? results[0] : {};
 		statusResult = results && results[1] ? results[1] : {};
 
-		return renderPage();
+		return renderPanelPage();
 	}
 });

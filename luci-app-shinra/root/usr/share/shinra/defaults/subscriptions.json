@@ -14,13 +14,6 @@
     "interval": "3m",
     "tolerance": 150
   },
-  "fetch_bypass": {
-    "enabled": false,
-    "mode": "temporary_rule",
-    "allow_lan": true,
-    "hosts": [],
-    "priority": 8000
-  },
   "subscription_update": {
     "auto_update": false,
     "update_hour": 3,
@@ -29,6 +22,7 @@
   },
   "ruleset": {
     "mode": "auto",
+    "fetch_strategy": "direct",
     "auto_update": false,
     "update_hour": 4,
     "repositories": {

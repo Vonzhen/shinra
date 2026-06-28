@@ -4,11 +4,13 @@
 
 'use strict';
 
-import { PATH, BIN } from 'shinra.core.constants';
+import { PATH } from 'shinra.core.constants';
 import { Success, Fail } from 'shinra.core.result';
 import { ERR } from 'shinra.core.error';
 import { acquire, release } from 'shinra.core.lock';
-import { read_text, read_optional_text, write_text_atomic, parse_json_object, request_content, request_keys, json_stringify, ExecResult, ExecSafe } from 'shinra.core.utils';
+import { read_text, read_optional_text, write_text_atomic, parse_json_object, request_content, request_keys, json_stringify, ExecResult } from 'shinra.core.utils';
+import { fetch_text } from 'shinra.resource_fetch';
+import { validate_fetch_strategy } from 'shinra.subscription_policy';
 
 function validate_profile_object(profile) {
 	if (type(profile.inbounds) != "array")
@@ -52,6 +54,7 @@ function default_profile_source() {
 	return {
 		schema_version: 1,
 		url: "https://testingcf.jsdelivr.net/gh/Vonzhen/singbox-profiles@master/profiles/main-profile.json",
+		fetch_strategy: "direct",
 		updated_at: ""
 	};
 }
@@ -70,11 +73,14 @@ function valid_template_url(url) {
 function normalize_profile_source(source) {
 	source = type(source) == "object" && source != null && type(source) != "array" ? source : {};
 	let url = type(source.url) == "string" ? source.url : "";
+	let fetch_strategy = type(source.fetch_strategy) == "string" && source.fetch_strategy != "" ? source.fetch_strategy : "direct";
 	let updated_at = type(source.updated_at) == "string" ? source.updated_at : "";
+	validate_fetch_strategy(fetch_strategy, "profile_source.fetch_strategy");
 
 	return {
 		schema_version: 1,
 		url: url,
+		fetch_strategy: fetch_strategy,
 		updated_at: updated_at
 	};
 }
@@ -165,7 +171,11 @@ function profile_sync_remote(trace_id, req) {
 		if (!valid_template_url(source.url))
 			die("Profile template URL must start with http:// or https://");
 
-		let content = ExecSafe(trace_id, [ BIN.TIMEOUT, "30", "wget", "-q", "-T", "20", "-Y", "off", "-O", "-", source.url ]);
+		let strategy = source.fetch_strategy || "direct";
+		let fetched = fetch_text(trace_id, source.url, strategy, { timeout_sec: 20, min_bytes: 16 });
+		if (!fetched.ok)
+			die("fetch failed: strategy=" + strategy + " " + fetched.error + " exit=" + fetched.exit_code + " stderr=" + fetched.stderr);
+		let content = fetched.body;
 		validate_profile_content(content);
 
 		lock = acquire(trace_id);
@@ -179,7 +189,8 @@ function profile_sync_remote(trace_id, req) {
 		return Success({
 			path: PATH.PROFILE,
 			backup: PATH.PROFILE_BAK,
-			source: source.url
+			source: source.url,
+			fetch_strategy: strategy
 		}, 200, trace_id, "Profile template synced");
 	} catch (e) {
 		if (lock != null)

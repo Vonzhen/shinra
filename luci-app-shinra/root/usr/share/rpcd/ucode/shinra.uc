@@ -13,10 +13,11 @@ import { logs_get, last_error_get, diagnostics_get } from 'shinra.diagnostics';
 import { selector_list, selector_delay_test, selector_set } from 'shinra.control';
 import { connections_list } from 'shinra.connections';
 import { connectivity_probe } from 'shinra.connectivity';
-import { ruleset_inventory, ruleset_policy_get, ruleset_policy_save, ruleset_download_required, ruleset_download_required_auto } from 'shinra.ruleset';
+import { ruleset_inventory, ruleset_required_inventory, ruleset_policy_get, ruleset_policy_save, ruleset_download_required, ruleset_download_required_auto, ruleset_download_required_start, ruleset_download_required_status } from 'shinra.ruleset';
 import { zashboard_source_get, zashboard_source_save, zashboard_status, zashboard_sync_remote, zashboard_update_check, zashboard_update_apply } from 'shinra.zashboard';
 import { notify_settings_get, notify_settings_save, notify_test_telegram } from 'shinra.notify';
 import { auto_task_status_get } from 'shinra.auto_task';
+import { net_fetch_test } from 'shinra.resource_fetch';
 
 function request_args(req) {
 	try {
@@ -351,6 +352,14 @@ const methods = {
 		}
 	},
 
+	ruleset_required_inventory: {
+		args: {},
+		call: function(req) {
+			let trace_id = gen_trace_id();
+			return gateway(trace_id, ruleset_required_inventory, req);
+		}
+	},
+
 	ruleset_policy_get: {
 		args: {},
 		call: function(req) {
@@ -382,6 +391,22 @@ const methods = {
 		call: function(req) {
 			let trace_id = gen_trace_id();
 			return gateway(trace_id, ruleset_download_required_auto, req);
+		}
+	},
+
+	ruleset_download_required_start: {
+		args: {},
+		call: function(req) {
+			let trace_id = gen_trace_id();
+			return gateway(trace_id, ruleset_download_required_start, req);
+		}
+	},
+
+	ruleset_download_required_status: {
+		args: {},
+		call: function(req) {
+			let trace_id = gen_trace_id();
+			return gateway(trace_id, ruleset_download_required_status, req);
 		}
 	},
 
@@ -466,6 +491,18 @@ const methods = {
 		call: function(req) {
 			let trace_id = gen_trace_id();
 			return gateway(trace_id, auto_task_status_get, req);
+		}
+	},
+
+	net_fetch_test: {
+		args: {
+			url: "",
+			policy: "",
+			min_bytes: 0
+		},
+		call: function(req) {
+			let trace_id = gen_trace_id();
+			return gateway(trace_id, net_fetch_test, req);
 		}
 	},
 

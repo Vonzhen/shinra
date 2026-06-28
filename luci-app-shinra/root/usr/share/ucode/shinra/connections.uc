@@ -4,11 +4,10 @@
 
 'use strict';
 
-import { CLASH_API } from 'shinra.core.constants';
 import { Success, Fail } from 'shinra.core.result';
 import { ERR } from 'shinra.core.error';
 import { observe_runtime } from 'shinra.runtime';
-import { http_get_json } from 'shinra.clash';
+import { http_get_json, clash_api_url } from 'shinra.clash';
 
 function number_or_zero(value) {
 	if (type(value) == "int" || type(value) == "double")
@@ -131,7 +130,7 @@ function connections_list(trace_id, req) {
 
 		let data = null;
 		try {
-			data = http_get_json(trace_id, CLASH_API.CONNECTIONS);
+			data = http_get_json(trace_id, clash_api_url("/connections"));
 		} catch (e) {
 			let err = "" + e;
 			return Success(unavailable("api_unreachable"), 200, trace_id, "Connections unavailable");
