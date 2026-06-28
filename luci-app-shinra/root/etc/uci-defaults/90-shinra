@@ -10,7 +10,9 @@ chmod 0755 /etc/shinra /etc/shinra/runtime /etc/shinra/rules 2>/dev/null || true
 chmod 0755 /var/run/shinra 2>/dev/null || true
 
 chmod 0755 /etc/init.d/shinra 2>/dev/null || true
+chmod 0755 /usr/libexec/shinra-ensure-auto-task 2>/dev/null || true
 chmod 0755 /usr/libexec/shinra-auto-task 2>/dev/null || true
+chmod 0755 /usr/libexec/shinra-ruleset-sync-job 2>/dev/null || true
 
 copy_default() {
 	local src="$1"
@@ -28,13 +30,8 @@ copy_default /usr/share/shinra/defaults/zashboard-source.json /etc/shinra/zashbo
 copy_default /usr/share/shinra/defaults/subscriptions.json /etc/shinra/subscriptions.json
 copy_default /usr/share/shinra/defaults/node-snapshot.json /etc/shinra/node-snapshot.json
 
-install -d -m 0755 /etc/crontabs
-touch /etc/crontabs/root
-if ! grep -Fq '/usr/libexec/shinra-auto-task' /etc/crontabs/root; then
-	printf '%s\n' '5 * * * * /usr/libexec/shinra-auto-task >/dev/null 2>&1' >> /etc/crontabs/root
+if [ -x /usr/libexec/shinra-ensure-auto-task ]; then
+	/usr/libexec/shinra-ensure-auto-task || true
 fi
-
-/etc/init.d/cron enable 2>/dev/null || true
-/etc/init.d/cron restart 2>/dev/null || true
 
 exit 0
