@@ -9,7 +9,8 @@ BUILD_DIR="${ROOT_DIR}/build/${PACKAGE_MODE}"
 PKG_DIR="${BUILD_DIR}/luci-app-shinra"
 CONTROL_DIR="${PKG_DIR}/CONTROL"
 APK_META_DIR="${PKG_DIR}/lib/apk/packages"
-PACKAGE_DEPENDS="luci-base, rpcd, rpcd-mod-ucode, ucode, ucode-mod-fs, ucode-mod-ubus, jsonfilter, sing-box, ip-full, ca-bundle, wget-ssl, coreutils-timeout, unzip"
+IPK_DEPENDS="luci-base, rpcd, rpcd-mod-ucode, ucode, ucode-mod-fs, ucode-mod-ubus, jsonfilter, sing-box, ip-full, ca-bundle, wget-ssl, coreutils-timeout, unzip"
+APK_DEPENDS="luci-base rpcd rpcd-mod-ucode ucode ucode-mod-fs ucode-mod-ubus jsonfilter sing-box ip-full ca-bundle wget-ssl coreutils-timeout unzip"
 
 fail() {
 	echo "build.sh: $*" >&2
@@ -41,6 +42,7 @@ pkg_name="$(read_make_var PKG_NAME)"
 pkg_version="$(read_make_var PKG_VERSION)"
 pkg_release="$(read_make_var PKG_RELEASE)"
 pkg_arch="$(read_make_var LUCI_PKGARCH)"
+apk_version="${pkg_version}-r${pkg_release}"
 
 [ -n "$pkg_name" ] || fail "PKG_NAME not found"
 [ -n "$pkg_version" ] || fail "PKG_VERSION not found"
@@ -81,7 +83,7 @@ Architecture: ${pkg_arch}
 Maintainer: Von <noreply@example.com>
 Section: luci
 Priority: optional
-Depends: ${PACKAGE_DEPENDS}
+Depends: ${IPK_DEPENDS}
 Description: Shinra sing-box TUN control panel for LuCI.
 EOF
 
@@ -228,7 +230,7 @@ build_apk() {
 
 	apk mkpkg \
 		--info "name:${pkg_name}" \
-		--info "version:${pkg_version}-${pkg_release}" \
+		--info "version:${apk_version}" \
 		--info "description:Shinra sing-box TUN control panel for LuCI." \
 		--info "arch:${pkg_arch}" \
 		--info "origin:https://github.com/Vonzhen/shinra" \
@@ -238,11 +240,11 @@ build_apk() {
 		--script "post-install:${BUILD_DIR}/post-install" \
 		--script "post-upgrade:${BUILD_DIR}/post-upgrade" \
 		--script "pre-deinstall:${BUILD_DIR}/pre-deinstall" \
-		--info "depends:${PACKAGE_DEPENDS}" \
+		--info "depends:${APK_DEPENDS}" \
 		--files "${PKG_DIR}" \
-		--output "${ROOT_DIR}/${pkg_name}_${pkg_version}-${pkg_release}_${pkg_arch}.apk"
+		--output "${ROOT_DIR}/${pkg_name}_${apk_version}_${pkg_arch}.apk"
 
-	echo "Built ${ROOT_DIR}/${pkg_name}_${pkg_version}-${pkg_release}_${pkg_arch}.apk"
+	echo "Built ${ROOT_DIR}/${pkg_name}_${apk_version}_${pkg_arch}.apk"
 }
 
 if [ "$PACKAGE_MODE" = "apk" ]; then
