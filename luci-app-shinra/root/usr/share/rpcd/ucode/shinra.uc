@@ -4,7 +4,7 @@ import { Success, Fail } from 'shinra.core.result';
 import { ERR } from 'shinra.core.error';
 import { init as gen_trace_id } from 'shinra.core.trace';
 import { get_profile, profile_source_get, profile_source_save, profile_sync_remote, validate_profile, save_profile, restore_default_profile, rollback_profile } from 'shinra.profile';
-import { subscriptions_get, subscriptions_save, subscriptions_refresh, subscriptions_refresh_auto, node_snapshot_get, node_snapshot_summary, subscription_test_source, subscription_fetch_preflight } from 'shinra.subscription';
+import { subscriptions_get, subscriptions_save, subscriptions_refresh, subscriptions_refresh_start, subscriptions_refresh_status, node_snapshot_get, node_snapshot_summary, subscription_test_source, subscription_fetch_preflight } from 'shinra.subscription';
 import { runtime_status, runtime_start, runtime_stop, runtime_restart } from 'shinra.runtime';
 import { generate_candidate, check_candidate } from 'shinra.generator';
 import { config_apply, config_rollback, runtime_healthcheck } from 'shinra.apply';
@@ -13,10 +13,11 @@ import { logs_get, last_error_get, diagnostics_get } from 'shinra.diagnostics';
 import { selector_list, selector_delay_test, selector_set } from 'shinra.control';
 import { connections_list } from 'shinra.connections';
 import { connectivity_probe } from 'shinra.connectivity';
-import { ruleset_inventory, ruleset_required_inventory, ruleset_policy_get, ruleset_policy_save, ruleset_download_required, ruleset_download_required_auto, ruleset_download_required_start, ruleset_download_required_status } from 'shinra.ruleset';
+import { ruleset_inventory, ruleset_required_inventory, ruleset_policy_get, ruleset_policy_save, ruleset_download_required, ruleset_download_required_start, ruleset_download_required_status, ruleset_artifact_status, ruleset_download_one_start, ruleset_download_one_status } from 'shinra.ruleset';
 import { zashboard_source_get, zashboard_source_save, zashboard_status, zashboard_sync_remote, zashboard_update_check, zashboard_update_apply } from 'shinra.zashboard';
 import { notify_settings_get, notify_settings_save, notify_test_telegram } from 'shinra.notify';
 import { auto_task_status_get } from 'shinra.auto_task';
+import { scheduler_status, scheduler_tick } from 'shinra.core.scheduler';
 import { net_fetch_test } from 'shinra.resource_fetch';
 
 function request_args(req) {
@@ -151,13 +152,21 @@ const methods = {
 		}
 	},
 
-	subscriptions_refresh_auto: {
+	subscriptions_refresh_start: {
 		args: {
 			strategy: ""
 		},
 		call: function(req) {
 			let trace_id = gen_trace_id();
-			return gateway(trace_id, subscriptions_refresh_auto, req);
+			return gateway(trace_id, subscriptions_refresh_start, req);
+		}
+	},
+
+	subscriptions_refresh_status: {
+		args: {},
+		call: function(req) {
+			let trace_id = gen_trace_id();
+			return gateway(trace_id, subscriptions_refresh_status, req);
 		}
 	},
 
@@ -386,14 +395,6 @@ const methods = {
 		}
 	},
 
-	ruleset_download_required_auto: {
-		args: {},
-		call: function(req) {
-			let trace_id = gen_trace_id();
-			return gateway(trace_id, ruleset_download_required_auto, req);
-		}
-	},
-
 	ruleset_download_required_start: {
 		args: {},
 		call: function(req) {
@@ -407,6 +408,32 @@ const methods = {
 		call: function(req) {
 			let trace_id = gen_trace_id();
 			return gateway(trace_id, ruleset_download_required_status, req);
+		}
+	},
+
+	ruleset_artifact_status: {
+		args: {},
+		call: function(req) {
+			let trace_id = gen_trace_id();
+			return gateway(trace_id, ruleset_artifact_status, req);
+		}
+	},
+
+	ruleset_download_one_start: {
+		args: {
+			tag: ""
+		},
+		call: function(req) {
+			let trace_id = gen_trace_id();
+			return gateway(trace_id, ruleset_download_one_start, req);
+		}
+	},
+
+	ruleset_download_one_status: {
+		args: {},
+		call: function(req) {
+			let trace_id = gen_trace_id();
+			return gateway(trace_id, ruleset_download_one_status, req);
 		}
 	},
 
@@ -491,6 +518,22 @@ const methods = {
 		call: function(req) {
 			let trace_id = gen_trace_id();
 			return gateway(trace_id, auto_task_status_get, req);
+		}
+	},
+
+	scheduler_status: {
+		args: {},
+		call: function(req) {
+			let trace_id = gen_trace_id();
+			return gateway(trace_id, scheduler_status, req);
+		}
+	},
+
+	scheduler_tick: {
+		args: {},
+		call: function(req) {
+			let trace_id = gen_trace_id();
+			return gateway(trace_id, scheduler_tick, req);
 		}
 	},
 

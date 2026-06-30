@@ -19,16 +19,18 @@ const PATH = {
 	RUNTIME_CONFIG_BAK: "/etc/shinra/runtime/config.json.bak",
 	CANDIDATE_CONFIG: "/var/run/shinra/config.candidate.json",
 	RUNTIME_STATE: "/var/run/shinra/runtime.state.json",
-	AUTO_TASK_STATE: "/var/run/shinra/auto-task.state.json",
 	AUTO_TASK_SCRIPT: "/usr/libexec/shinra-auto-task",
 	CRON_ROOT: "/etc/crontabs/root",
-	JOB_STATE: "/var/run/shinra/job-state.json",
+	TASK_DIR: "/var/run/shinra/tasks",
+	RUNNER_DIR: "/var/run/shinra/runner",
+	SCHEDULER_DIR: "/var/run/shinra/scheduler",
+	SCHEDULER_STATE: "/var/run/shinra/scheduler/state.json",
 	LAST_APPLY_RESULT: "/var/run/shinra/last-apply-result",
 	LAST_ERROR: "/var/run/shinra/last-error.log",
 	RULE_DIR: "/etc/shinra/rules",
 	RULE_DEFAULT_DIR: "/usr/share/shinra/rules",
 	RUN_DIR: "/var/run/shinra",
-	LOCK_DIR: "/var/run/shinra/lock"
+	LOCK_DIR: "/var/run/shinra/locks"
 };
 
 const BIN = {

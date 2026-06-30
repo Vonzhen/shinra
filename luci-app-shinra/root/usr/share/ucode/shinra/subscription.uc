@@ -4,14 +4,18 @@
 
 'use strict';
 
+import { mkdir, stat } from 'fs';
 import { PATH, BIN } from 'shinra.core.constants';
 import { Success, Fail } from 'shinra.core.result';
 import { ERR } from 'shinra.core.error';
-import { acquire, release } from 'shinra.core.lock';
+import { lock_acquire, lock_release } from 'shinra.core.lock';
 import { read_text, write_text_atomic, parse_json_object, request_content, request_keys, json_escape, json_stringify, ExecResult, ExecSafe } from 'shinra.core.utils';
 import { validate_refresh_strategy, normalize_subscriptions_policy } from 'shinra.subscription_policy';
-import { send_telegram_best_effort } from 'shinra.notify';
 import { fetch_text } from 'shinra.resource_fetch';
+import { task_path, read_task, patch_task, running_task, finish_task, fail_task } from 'shinra.core.task';
+
+const SUBSCRIPTION_REFRESH_TASK = "subscription.refresh";
+const SUBSCRIPTION_REFRESH_TRACE = "shinra-runner-subscription-refresh";
 
 function validate_url(url) {
 	if (type(url) != "string" || url == "")
@@ -43,6 +47,59 @@ function refresh_strategy(config, req) {
 	}
 
 	return "direct";
+}
+
+function subscription_refresh_task_enabled(trace_id) {
+	return trace_id == SUBSCRIPTION_REFRESH_TRACE;
+}
+
+function progress_percent(done, total) {
+	done = int(done || 0);
+	total = int(total || 0);
+	if (total <= 0)
+		return 0;
+	if (done >= total)
+		return 100;
+	return int((done * 100) / total);
+}
+
+function redacted_url(url) {
+	if (type(url) != "string" || url == "")
+		return "";
+
+	let scheme = "";
+	let rest = url;
+	if (substr(url, 0, 8) == "https://") {
+		scheme = "https://";
+		rest = substr(url, 8);
+	} else if (substr(url, 0, 7) == "http://") {
+		scheme = "http://";
+		rest = substr(url, 7);
+	}
+
+	let slash = index(rest, "/");
+	let host = slash >= 0 ? substr(rest, 0, slash) : rest;
+	if (host == "")
+		return "";
+	return scheme + host + "/...";
+}
+
+function write_subscription_refresh_task(trace_id, patch) {
+	try {
+		if (!subscription_refresh_task_enabled(trace_id))
+			return;
+		if (patch.status == "running")
+			running_task(SUBSCRIPTION_REFRESH_TASK, trace_id, patch);
+		else
+			patch_task(SUBSCRIPTION_REFRESH_TASK, patch);
+	} catch (e) {
+		/* Progress must never fail the actual refresh. */
+	}
+}
+
+function path_exists(path) {
+	let info = stat(path);
+	return type(info) == "object" && info != null;
 }
 
 function validate_outbounds(outbounds) {
@@ -356,13 +413,13 @@ function subscriptions_save(trace_id, req) {
 			die("Missing Subscriptions content; request keys: " + request_keys(req));
 
 		let config = validate_subscriptions_content(content);
-		lock = acquire(trace_id);
+		lock = lock_acquire("subscription", trace_id);
 		write_text_atomic(PATH.SUBSCRIPTIONS, json_stringify(config));
-		release(lock);
+		lock_release(lock);
 		return Success({ path: PATH.SUBSCRIPTIONS }, 200, trace_id, "Subscriptions saved");
 	} catch (e) {
 		if (lock != null)
-			release(lock);
+			lock_release(lock);
 		let err = "" + e;
 		return Fail(ERR.E_SUBSCRIPTION_SAVE_FAILED, "Failed to save Subscriptions", trace_id, err);
 	}
@@ -462,7 +519,7 @@ function subscriptions_refresh(trace_id, req) {
 	try {
 		let config = validate_subscriptions_content(read_text(PATH.SUBSCRIPTIONS));
 		let strategy = refresh_strategy(config, req);
-		lock = acquire(trace_id);
+		lock = lock_acquire("subscription", trace_id);
 
 		let timestamp = ExecSafe(trace_id, [ "date", "-u", "+%Y-%m-%dT%H:%M:%SZ" ]);
 		timestamp = replace(timestamp, "\n", "");
@@ -471,12 +528,65 @@ function subscriptions_refresh(trace_id, req) {
 		let sources_json = "";
 		let outbounds_json = "";
 		let total = 0;
+		let completed = 0;
+
+		write_subscription_refresh_task(trace_id, {
+			status: "running",
+			message: "Subscription refresh running",
+			total_count: length(config.sources),
+			completed_count: 0,
+			updated_count: 0,
+			unchanged_count: 0,
+			failed_count: 0,
+			checked_count: 0,
+			progress: 0,
+			current_item: "",
+			last_error: "",
+			meta: {
+				refresh_strategy: strategy,
+				source_name: "",
+				current_url_redacted: "",
+				node_count: 0
+			},
+			trace_id: trace_id
+		});
 
 		for (let source in config.sources) {
+			write_subscription_refresh_task(trace_id, {
+				status: "running",
+				message: "Subscription refresh running",
+				total_count: length(config.sources),
+				completed_count: completed,
+				updated_count: total,
+				checked_count: completed,
+				progress: progress_percent(completed, length(config.sources)),
+				current_item: source.name || "",
+				last_error: "",
+				meta: {
+					refresh_strategy: strategy,
+					source_name: source.name || "",
+					current_url_redacted: redacted_url(source.url),
+					node_count: total
+				}
+			});
+
 			if (source.enabled == false) {
 				if (length(sources_json))
 					sources_json = sources_json + ",";
 				sources_json = sources_json + source_result_json(source.name, source.url, strategy, true, 0, "disabled");
+				completed = completed + 1;
+				write_subscription_refresh_task(trace_id, {
+					completed_count: completed,
+					checked_count: completed,
+					progress: progress_percent(completed, length(config.sources)),
+					current_item: source.name || "",
+					meta: {
+						refresh_strategy: strategy,
+						source_name: source.name || "",
+						current_url_redacted: redacted_url(source.url),
+						node_count: total
+					}
+				});
 				continue;
 			}
 
@@ -494,6 +604,21 @@ function subscriptions_refresh(trace_id, req) {
 				outbounds_json = outbounds_json + ",";
 			outbounds_json = outbounds_json + substr(fetched_outbounds, 1, length(fetched_outbounds) - 2);
 			total = total + length(outbounds);
+			completed = completed + 1;
+			write_subscription_refresh_task(trace_id, {
+				completed_count: completed,
+				updated_count: total,
+				checked_count: completed,
+				progress: progress_percent(completed, length(config.sources)),
+				current_item: source.name || "",
+				last_error: "",
+				meta: {
+					refresh_strategy: strategy,
+					source_name: source.name || "",
+					current_url_redacted: redacted_url(source.url),
+					node_count: total
+				}
+			});
 		}
 
 		let snapshot = "{" +
@@ -507,89 +632,117 @@ function subscriptions_refresh(trace_id, req) {
 
 		validate_node_snapshot_content(snapshot);
 		write_text_atomic(PATH.NODE_SNAPSHOT, snapshot);
-		release(lock);
+		lock_release(lock);
+		if (subscription_refresh_task_enabled(trace_id)) {
+			finish_task(SUBSCRIPTION_REFRESH_TASK, total > 0 ? "success" : "partial", trace_id, {
+				message: "Node Snapshot refreshed",
+				total_count: length(config.sources),
+				completed_count: length(config.sources),
+				updated_count: total,
+				unchanged_count: 0,
+				failed_count: 0,
+				checked_count: length(config.sources),
+				progress: 100,
+				current_item: "",
+				last_error: "",
+				meta: {
+					refresh_strategy: strategy,
+					source_name: "",
+					current_url_redacted: "",
+					node_count: total
+				}
+			});
+		}
 		return Success({ path: PATH.NODE_SNAPSHOT, node_count: total, refresh_strategy: strategy }, 200, trace_id, "Node Snapshot refreshed");
 	} catch (e) {
 		if (lock != null)
-			release(lock);
+			lock_release(lock);
 		let err = "" + e;
+		if (subscription_refresh_task_enabled(trace_id)) {
+			try {
+				fail_task(SUBSCRIPTION_REFRESH_TASK, trace_id, err, {
+					message: "Failed to refresh Subscriptions"
+				});
+			} catch (task_error) {
+				let ignored = "" + task_error;
+			}
+		}
 		return Fail(ERR.E_SUBSCRIPTION_FETCH_FAILED, "Failed to refresh Subscriptions", trace_id, err);
 	}
 }
 
-function subscription_source_count() {
+function subscription_refresh_runner_strategy(req) {
+	if (type(req) != "object" || req == null || type(req.strategy) != "string" || req.strategy == "")
+		return "";
+	if (req.strategy == "saved")
+		return "";
+	validate_refresh_strategy(req.strategy);
+	return req.strategy;
+}
+
+function notify_intent_arg(req) {
+	if (type(req) == "object" && req != null && req.notify_intent == true)
+		return " notify";
+	return "";
+}
+
+function subscriptions_refresh_status(trace_id, req) {
 	try {
-		let config = validate_subscriptions_content(read_text(PATH.SUBSCRIPTIONS));
-		if (type(config.sources) == "array")
-			return length(config.sources);
+		let path = task_path(SUBSCRIPTION_REFRESH_TASK);
+		return Success({
+			path: path,
+			exists: path_exists(path),
+			task: read_task(SUBSCRIPTION_REFRESH_TASK)
+		}, 200, trace_id, "Subscription refresh task status loaded");
 	} catch (e) {
 		let err = "" + e;
+		return Fail(ERR.E_SUBSCRIPTION_FETCH_FAILED, "Failed to load Subscription refresh task status", trace_id, err);
 	}
-
-	return 0;
 }
 
-function notification_meta(result) {
-	if (result == null)
-		return {
-			attempted: true,
-			ok: false,
-			sent: false,
-			reason: "notification crashed"
-		};
+function subscriptions_refresh_start(trace_id, req) {
+	try {
+		if (!path_exists(PATH.RUN_DIR) && !mkdir(PATH.RUN_DIR, 0700))
+			die("Failed to create Run directory: " + PATH.RUN_DIR);
+		if (!path_exists(PATH.RUNNER_DIR) && !mkdir(PATH.RUNNER_DIR, 0700))
+			die("Failed to create Runner directory: " + PATH.RUNNER_DIR);
 
-	let reason = "";
-	if (result.ok == true && type(result.data) == "object" && result.data != null && type(result.data.reason) == "string")
-		reason = result.data.reason;
-	else if (result.ok != true)
-		reason = result.detail || result.message || result.code || "";
+		let strategy = subscription_refresh_runner_strategy(req);
+		let lock_info = stat(PATH.RUNNER_DIR + "/subscription.refresh.lock");
+		let path = task_path(SUBSCRIPTION_REFRESH_TASK);
+		let task = read_task(SUBSCRIPTION_REFRESH_TASK);
+		if (type(lock_info) == "object" && lock_info != null && (task.status == "running" || task.status == "starting")) {
+			return Success({
+				path: path,
+				task: task,
+				started: false,
+				reason: "already_running"
+			}, 200, trace_id, "Subscription refresh task is already running");
+		}
 
-	return {
-		attempted: true,
-		ok: result.ok == true,
-		sent: result.ok == true && type(result.data) == "object" && result.data != null && result.data.sent == true,
-		reason: reason
-	};
-}
+		let command = "/usr/libexec/shinra-runner subscription.refresh subscriptions_refresh " + SUBSCRIPTION_REFRESH_TRACE;
+		if (strategy != "")
+			command = command + " " + strategy;
+		else if (notify_intent_arg(req) != "")
+			command = command + " -";
+		command = command + notify_intent_arg(req);
+		let code = system(command + " >/dev/null 2>&1 &");
+		if (code != 0)
+			die("Failed to start /usr/libexec/shinra-runner: " + code);
 
-function append_notification(result, meta) {
-	if (type(result.data) == "object" && result.data != null && type(result.data) != "array")
-		result.data.notification = meta;
-	else
-		result.notification = meta;
-	return result;
-}
-
-function subscription_auto_status(result) {
-	if (!result || result.ok != true)
-		return "fail";
-	let data = type(result.data) == "object" && result.data != null ? result.data : {};
-	return (data.node_count || 0) > 0 ? "success" : "partial";
-}
-
-function subscription_auto_message(result, status) {
-	let source_count = subscription_source_count();
-	if (!result || result.ok != true) {
-		let detail = "unknown error";
-		if (result != null)
-			detail = result.detail || result.message || result.code || detail;
-		return "Subscription refresh " + status + "\nDetail: " + detail + "\nSources: " + source_count;
+		task = read_task(SUBSCRIPTION_REFRESH_TASK);
+		task.status = "starting";
+		task.message = "Subscription refresh queued";
+		task.trace_id = trace_id;
+		return Success({
+			path: path,
+			task: task,
+			started: true
+		}, 202, trace_id, "Subscription refresh task started");
+	} catch (e) {
+		let err = "" + e;
+		return Fail(ERR.E_SUBSCRIPTION_FETCH_FAILED, "Failed to start Subscription refresh task", trace_id, err);
 	}
-
-	let data = type(result.data) == "object" && result.data != null ? result.data : {};
-	return "Subscription refresh " + status +
-		"\nNodes: " + (data.node_count || 0) +
-		"\nSources: " + source_count +
-		"\nStrategy: " + (data.refresh_strategy || "-") +
-		"\nLAN/private routing: TUN route_exclude_address";
 }
 
-function subscriptions_refresh_auto(trace_id, req) {
-	let result = subscriptions_refresh(trace_id, req);
-	let status = subscription_auto_status(result);
-	let message = subscription_auto_message(result, status);
-	let notify = send_telegram_best_effort(trace_id, "subscriptions_refresh_auto", status, message);
-	return append_notification(result, notification_meta(notify));
-}
-
-export { subscriptions_get, subscriptions_save, subscriptions_refresh, subscriptions_refresh_auto, node_snapshot_get, node_snapshot_summary, subscription_test_source, subscription_fetch_preflight };
+export { subscriptions_get, subscriptions_save, subscriptions_refresh, subscriptions_refresh_start, subscriptions_refresh_status, node_snapshot_get, node_snapshot_summary, subscription_test_source, subscription_fetch_preflight };

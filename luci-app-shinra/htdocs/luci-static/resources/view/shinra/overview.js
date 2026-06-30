@@ -62,6 +62,18 @@ const callAutoTaskStatusGet = rpc.declare({
 	expect: { '': {} }
 });
 
+const callSubscriptionsRefreshStatus = rpc.declare({
+	object: 'shinra',
+	method: 'subscriptions_refresh_status',
+	expect: { '': {} }
+});
+
+const callRulesetDownloadRequiredStatus = rpc.declare({
+	object: 'shinra',
+	method: 'ruleset_download_required_status',
+	expect: { '': {} }
+});
+
 const callGenerate = rpc.declare({
 	object: 'shinra',
 	method: 'config_generate',
@@ -152,6 +164,14 @@ function statusWord(status) {
 		return _('\u90e8\u5206\u6210\u529f');
 	if (status === 'fail')
 		return _('\u5931\u8d25');
+	if (status === 'failed')
+		return _('\u5931\u8d25');
+	if (status === 'running')
+		return _('\u8fd0\u884c\u4e2d');
+	if (status === 'starting')
+		return _('\u542f\u52a8\u4e2d');
+	if (status === 'idle')
+		return _('\u7a7a\u95f2');
 	if (status)
 		return status;
 	return '-';
@@ -181,6 +201,18 @@ function autoJobText(job, disabledText, waitingText) {
 	if (job.last_status)
 		return _('%s \u4e8e %s').format(statusWord(job.last_status), job.last_run_at || '-');
 	if (job.enabled)
+		return waitingText || _('\u81ea\u52a8\u4efb\u52a1\u7b49\u5f85\u4e2d');
+	return disabledText || _('\u81ea\u52a8\u4efb\u52a1\u5df2\u505c\u7528');
+}
+
+function schedulerTaskText(schedulerTask, task, disabledText, waitingText) {
+	schedulerTask = schedulerTask || {};
+	task = task || {};
+	if (task.status && task.status !== 'idle')
+		return _('%s \u4e8e %s').format(statusWord(task.status), task.finished_at || task.started_at || '-');
+	if (schedulerTask.last_trigger_result && schedulerTask.last_trigger_result !== 'waiting')
+		return _('%s \u4e8e %s').format(schedulerTask.last_trigger_result, schedulerTask.last_run_at || '-');
+	if (schedulerTask.enabled)
 		return waitingText || _('\u81ea\u52a8\u4efb\u52a1\u7b49\u5f85\u4e2d');
 	return disabledText || _('\u81ea\u52a8\u4efb\u52a1\u5df2\u505c\u7528');
 }
@@ -252,7 +284,9 @@ function pageLoadError() {
 		pageResults.profileSource,
 		pageResults.rulesPolicy,
 		pageResults.notify,
-		pageResults.autoTask
+		pageResults.autoTask,
+		pageResults.subscriptionTask,
+		pageResults.rulesetTask
 	].filter(function(result) {
 		return result && !result.ok;
 	});
@@ -302,7 +336,9 @@ function loadAll() {
 		callProfileSourceGet().catch(function(e) { return { ok: false, message: _('\u6a21\u677f\u6e90\u52a0\u8f7d\u5931\u8d25'), detail: e.message || String(e) }; }),
 		callRulesetPolicyGet().catch(function(e) { return { ok: false, message: _('\u89c4\u5219\u96c6\u7b56\u7565\u52a0\u8f7d\u5931\u8d25'), detail: e.message || String(e) }; }),
 		callNotifySettingsGet().catch(function(e) { return { ok: false, message: _('\u901a\u77e5\u8bbe\u7f6e\u52a0\u8f7d\u5931\u8d25'), detail: e.message || String(e) }; }),
-		callAutoTaskStatusGet().catch(function(e) { return { ok: false, message: _('\u81ea\u52a8\u4efb\u52a1\u72b6\u6001\u52a0\u8f7d\u5931\u8d25'), detail: e.message || String(e) }; })
+		callAutoTaskStatusGet().catch(function(e) { return { ok: false, message: _('\u81ea\u52a8\u4efb\u52a1\u72b6\u6001\u52a0\u8f7d\u5931\u8d25'), detail: e.message || String(e) }; }),
+		callSubscriptionsRefreshStatus().catch(function(e) { return { ok: false, message: _('\u8ba2\u9605\u5237\u65b0\u4efb\u52a1\u72b6\u6001\u52a0\u8f7d\u5931\u8d25'), detail: e.message || String(e) }; }),
+		callRulesetDownloadRequiredStatus().catch(function(e) { return { ok: false, message: _('\u89c4\u5219\u96c6\u4efb\u52a1\u72b6\u6001\u52a0\u8f7d\u5931\u8d25'), detail: e.message || String(e) }; })
 	]).then(function(results) {
 		return {
 			runtime: results[0],
@@ -314,7 +350,9 @@ function loadAll() {
 			profileSource: results[6],
 			rulesPolicy: results[7],
 			notify: results[8],
-			autoTask: results[9]
+			autoTask: results[9],
+			subscriptionTask: results[10],
+			rulesetTask: results[11]
 		};
 	});
 }
@@ -352,9 +390,11 @@ function resourceCards() {
 	const autoTaskData = dataOf(pageResults.autoTask);
 	const autoTask = autoTaskData.state || {};
 	const scheduler = autoTaskData.scheduler || {};
-	const jobs = autoTask.jobs || {};
-	const subJob = jobs.subscriptions_refresh_auto || {};
-	const rulesJob = jobs.ruleset_download_required_auto || {};
+	const schedulerTasks = autoTask.tasks || {};
+	const subSchedulerTask = schedulerTasks['subscription.refresh'] || {};
+	const rulesSchedulerTask = schedulerTasks['ruleset.sync'] || {};
+	const subTask = dataOf(pageResults.subscriptionTask).task || {};
+	const rulesTask = dataOf(pageResults.rulesetTask).task || {};
 	const sourceCount = Array.isArray(subscriptions.sources) ? subscriptions.sources.length : 0;
 	const nodeCount = Number(snapshot.node_count || 0);
 	const missingRules = Number(rules.missing_count || 0);
@@ -367,10 +407,10 @@ function resourceCards() {
 	const snapshotTime = snapshot.updated_at || _('\u672a\u5237\u65b0');
 	const subUpdate = subscriptions.subscription_update || {};
 	const subScheduleWarning = schedulerWarning(scheduler, subUpdate.auto_update === true);
-	const subAutoText = subScheduleWarning || autoJobText(subJob, _('\u81ea\u52a8\u5237\u65b0\u5df2\u505c\u7528'), schedulerPlanText(true, subUpdate.update_hour));
-	const rulesTime = rulesJob.last_run_at || _('\u672a\u540c\u6b65');
+	const subAutoText = subScheduleWarning || schedulerTaskText(subSchedulerTask, subTask, _('\u81ea\u52a8\u5237\u65b0\u5df2\u505c\u7528'), schedulerPlanText(true, subUpdate.update_hour));
+	const rulesTime = rulesTask.finished_at || rulesTask.started_at || rulesSchedulerTask.last_run_at || _('\u672a\u540c\u6b65');
 	const rulesScheduleWarning = schedulerWarning(scheduler, rulesPolicy.auto_update === true);
-	const rulesResultText = rulesScheduleWarning || (rulesJob.last_message ? compactMessage(rulesJob.last_message) : autoJobText(rulesJob, _('\u81ea\u52a8\u540c\u6b65\u5df2\u505c\u7528'), schedulerPlanText(true, rulesPolicy.update_hour)));
+	const rulesResultText = rulesScheduleWarning || compactMessage(schedulerTaskText(rulesSchedulerTask, rulesTask, _('\u81ea\u52a8\u540c\u6b65\u5df2\u505c\u7528'), schedulerPlanText(true, rulesPolicy.update_hour)));
 	const rulesMode = rulesPolicy.mode || '-';
 	const panelUpdated = panelInstalled.updated_at || (panel.index_mtime ? _('mtime %s').format(panel.index_mtime) : _('\u672a\u66f4\u65b0'));
 	const panelVersion = panelInstalled.version || panelLastCheck.version || (panel.installed ? _('\u672a\u8bb0\u5f55\u7248\u672c') : _('\u8bf7\u5b89\u88c5\u9762\u677f\u8d44\u6e90'));

@@ -183,9 +183,9 @@ function should_send(settings, status, force) {
 function task_title(settings, task_type, status) {
 	let name = settings.telegram.location_name || "Shinra";
 	let task = "Task notification";
-	if (task_type == "subscriptions_refresh" || task_type == "subscriptions_refresh_auto")
+	if (task_type == "subscriptions_refresh" || task_type == "subscription.refresh")
 		task = "Subscription refresh";
-	else if (task_type == "ruleset_download_required" || task_type == "ruleset_download_required_auto")
+	else if (task_type == "ruleset_download_required" || task_type == "ruleset.sync")
 		task = "Rule Set sync";
 	else if (task_type == "telegram_test")
 		task = "Telegram test";
@@ -249,8 +249,81 @@ function send_telegram(trace_id, task_type, status, message) {
 	}
 }
 
-function send_telegram_best_effort(trace_id, task_type, status, message) {
+function result_data(result) {
+	if (result && type(result.data) == "object" && result.data != null && type(result.data) != "array")
+		return result.data;
+	return {};
+}
+
+function failed_rule_tags(data) {
+	let tags = [];
+	let failed = type(data.failed) == "array" ? data.failed : [];
+
+	for (let item in failed) {
+		if (type(item) == "object" && item != null && type(item.tag) == "string")
+			push(tags, item.tag);
+	}
+
+	return tags;
+}
+
+function join_tags(tags) {
+	let text = "";
+	for (let tag in tags) {
+		if (length(text))
+			text = text + ", ";
+		text = text + tag;
+	}
+	return text;
+}
+
+function result_status(task_type, result) {
+	if (!result || result.ok != true)
+		return "fail";
+
+	let data = result_data(result);
+	if (task_type == "subscription.refresh")
+		return (data.node_count || 0) > 0 ? "success" : "partial";
+	if (task_type == "ruleset.sync")
+		return (data.failed_count || 0) > 0 ? "partial" : "success";
+	return "success";
+}
+
+function result_message(task_type, result, status) {
+	if (!result || result.ok != true) {
+		let detail = "unknown error";
+		if (result != null)
+			detail = result.detail || result.message || result.code || detail;
+		return task_type + " " + status + "\nDetail: " + detail;
+	}
+
+	let data = result_data(result);
+	if (task_type == "subscription.refresh") {
+		return "Subscription refresh " + status +
+			"\nNodes: " + (data.node_count || 0) +
+			"\nStrategy: " + (data.refresh_strategy || "-") +
+			"\nLAN/private routing: TUN route_exclude_address";
+	}
+
+	if (task_type == "ruleset.sync") {
+		let tags = failed_rule_tags(data);
+		let message = "Rule Set sync " + status +
+			"\nRequired: " + (data.required_count || 0) +
+			"\nUpdated: " + (data.updated_count || 0) +
+			"\nUnchanged: " + (data.unchanged_count || 0) +
+			"\nFailed: " + (data.failed_count || 0);
+		if (length(tags))
+			message = message + "\nFailed Rule Sets: " + join_tags(tags);
+		return message;
+	}
+
+	return (result.message || task_type + " " + status);
+}
+
+function notify_result_best_effort(trace_id, task_type, result) {
 	try {
+		let status = result_status(task_type, result);
+		let message = result_message(task_type, result, status);
 		return send_telegram(trace_id, task_type, status, message);
 	} catch (e) {
 		return null;
@@ -300,4 +373,4 @@ function notify_test_telegram(trace_id, req) {
 	}
 }
 
-export { notify_settings_get, notify_settings_save, notify_test_telegram, send_telegram, send_telegram_best_effort };
+export { notify_settings_get, notify_settings_save, notify_test_telegram, send_telegram, notify_result_best_effort };

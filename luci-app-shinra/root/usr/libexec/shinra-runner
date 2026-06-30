@@ -1,0 +1,78 @@
+#!/bin/sh
+
+set -u
+
+TASK_TYPE="${1:-}"
+TARGET="${2:-}"
+TRACE_ID="${3:-shinra-runner}"
+STRATEGY="${4:-}"
+NOTIFY="${5:-}"
+TAG=""
+RUN_DIR="/var/run/shinra"
+RUNNER_DIR="/var/run/shinra/runner"
+LOCK=""
+
+case "${TASK_TYPE}:${TARGET}" in
+	ruleset.sync:ruleset_download_required)
+		LOCK="${RUNNER_DIR}/ruleset.sync.lock"
+		;;
+	ruleset.download_one:ruleset_download_one)
+		LOCK="${RUNNER_DIR}/ruleset.download_one.lock"
+		TAG="${4:-}"
+		STRATEGY=""
+		NOTIFY="${5:-}"
+		;;
+	subscription.refresh:subscriptions_refresh)
+		LOCK="${RUNNER_DIR}/subscription.refresh.lock"
+		;;
+	*)
+		exit 2
+		;;
+esac
+
+case "$TRACE_ID" in
+	*[!A-Za-z0-9._-]*)
+	TRACE_ID="shinra-runner"
+	;;
+esac
+
+case "$TAG" in
+	""|*[!A-Za-z0-9._-]*)
+		TAG=""
+		;;
+esac
+
+case "$STRATEGY" in
+	""|direct|proxy)
+		;;
+	-)
+		STRATEGY=""
+		;;
+	*)
+		STRATEGY=""
+		;;
+esac
+
+case "$NOTIFY" in
+	notify|true|1)
+		NOTIFY_INTENT="true"
+		;;
+	*)
+		NOTIFY_INTENT="false"
+		;;
+esac
+
+mkdir -p "$RUN_DIR" "$RUNNER_DIR"
+
+if ! mkdir "$LOCK" 2>/dev/null; then
+	exit 0
+fi
+
+cleanup() {
+	rmdir "$LOCK" 2>/dev/null || true
+}
+
+trap cleanup EXIT INT TERM
+
+ucode -e 'import { runner_execute } from "shinra.core.runner"; let code = runner_execute("'"$TASK_TYPE"'", "'"$TARGET"'", "'"$TRACE_ID"'", { strategy: "'"$STRATEGY"'", tag: "'"$TAG"'", notify_intent: '"$NOTIFY_INTENT"' }); if (code != 0) die("runner failed: " + code);'
+exit "$?"
