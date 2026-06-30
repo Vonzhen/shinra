@@ -7,7 +7,7 @@
 import { PATH } from 'shinra.core.constants';
 import { Success, Fail } from 'shinra.core.result';
 import { ERR } from 'shinra.core.error';
-import { acquire, release } from 'shinra.core.lock';
+import { lock_acquire, lock_release } from 'shinra.core.lock';
 import { read_text, read_optional_text, write_text_atomic, parse_json_object, request_content, request_keys, json_stringify, ExecResult } from 'shinra.core.utils';
 import { fetch_text } from 'shinra.resource_fetch';
 import { validate_fetch_strategy } from 'shinra.subscription_policy';
@@ -146,9 +146,9 @@ function profile_source_save(trace_id, req) {
 		if (source.url != "" && !valid_template_url(source.url))
 			die("Profile template URL must start with http:// or https://");
 
-		lock = acquire(trace_id);
+		lock = lock_acquire("profile", trace_id);
 		write_text_atomic(PATH.PROFILE_SOURCE, profile_source_content(source));
-		release(lock);
+		lock_release(lock);
 
 		return Success({
 			path: PATH.PROFILE_SOURCE,
@@ -156,7 +156,7 @@ function profile_source_save(trace_id, req) {
 		}, 200, trace_id, "Profile source saved");
 	} catch (e) {
 		if (lock != null)
-			release(lock);
+			lock_release(lock);
 		let err = "" + e;
 		return Fail(ERR.E_PROFILE_SOURCE_FAILED, "Failed to save Profile source", trace_id, err);
 	}
@@ -178,13 +178,13 @@ function profile_sync_remote(trace_id, req) {
 		let content = fetched.body;
 		validate_profile_content(content);
 
-		lock = acquire(trace_id);
+		lock = lock_acquire("profile", trace_id);
 		let current = read_text(PATH.PROFILE);
 		write_text_atomic(PATH.PROFILE_BAK, current);
 		write_text_atomic(PATH.PROFILE, content);
 		source.updated_at = now_utc(trace_id);
 		write_text_atomic(PATH.PROFILE_SOURCE, profile_source_content(source));
-		release(lock);
+		lock_release(lock);
 
 		return Success({
 			path: PATH.PROFILE,
@@ -194,7 +194,7 @@ function profile_sync_remote(trace_id, req) {
 		}, 200, trace_id, "Profile template synced");
 	} catch (e) {
 		if (lock != null)
-			release(lock);
+			lock_release(lock);
 		let err = "" + e;
 		return Fail(ERR.E_PROFILE_SYNC_FAILED, "Failed to sync Profile template", trace_id, err);
 	}
@@ -220,15 +220,15 @@ function save_profile(trace_id, req) {
 		if (content == "")
 			die("Missing Profile content; request keys: " + request_keys(req));
 		validate_profile_content(content);
-		lock = acquire(trace_id);
+		lock = lock_acquire("profile", trace_id);
 		let current = read_text(PATH.PROFILE);
 		write_text_atomic(PATH.PROFILE_BAK, current);
 		write_text_atomic(PATH.PROFILE, content);
-		release(lock);
+		lock_release(lock);
 		return Success({ path: PATH.PROFILE, backup: PATH.PROFILE_BAK }, 200, trace_id, "Profile saved");
 	} catch (e) {
 		if (lock != null)
-			release(lock);
+			lock_release(lock);
 		let err = "" + e;
 		return Fail(ERR.E_PROFILE_SAVE_FAILED, "Failed to save Profile", trace_id, err);
 	}
@@ -237,17 +237,17 @@ function save_profile(trace_id, req) {
 function restore_default_profile(trace_id, req) {
 	let lock = null;
 	try {
-		lock = acquire(trace_id);
+		lock = lock_acquire("profile", trace_id);
 		let current = read_text(PATH.PROFILE);
 		let defaults = read_text(PATH.PROFILE_DEFAULT);
 		validate_profile_content(defaults);
 		write_text_atomic(PATH.PROFILE_BAK, current);
 		write_text_atomic(PATH.PROFILE, defaults);
-		release(lock);
+		lock_release(lock);
 		return Success({ path: PATH.PROFILE, backup: PATH.PROFILE_BAK }, 200, trace_id, "Default Profile restored");
 	} catch (e) {
 		if (lock != null)
-			release(lock);
+			lock_release(lock);
 		let err = "" + e;
 		return Fail(ERR.E_PROFILE_RESTORE_FAILED, "Failed to restore default Profile", trace_id, err);
 	}
@@ -256,17 +256,17 @@ function restore_default_profile(trace_id, req) {
 function rollback_profile(trace_id, req) {
 	let lock = null;
 	try {
-		lock = acquire(trace_id);
+		lock = lock_acquire("profile", trace_id);
 		let backup = read_text(PATH.PROFILE_BAK);
 		validate_profile_content(backup);
 		let current = read_text(PATH.PROFILE);
 		write_text_atomic(PATH.PROFILE_BAK, current);
 		write_text_atomic(PATH.PROFILE, backup);
-		release(lock);
+		lock_release(lock);
 		return Success({ path: PATH.PROFILE, backup: PATH.PROFILE_BAK }, 200, trace_id, "Profile rolled back");
 	} catch (e) {
 		if (lock != null)
-			release(lock);
+			lock_release(lock);
 		let err = "" + e;
 		return Fail(ERR.E_PROFILE_ROLLBACK_FAILED, "Failed to roll back Profile", trace_id, err);
 	}

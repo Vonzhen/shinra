@@ -528,7 +528,7 @@ function subscriptionUpdateSettings(policy) {
 			E('h3', {}, _('边界')),
 			E('p', { 'style': 'color: #667; margin-top: 0;' }, _('这里只保存自动刷新策略。调度器会按该策略触发自动任务。')),
 			E('div', { 'style': 'color: #667; font-size: 12px; line-height: 1.6;' }, [
-				_('调度目标：subscriptions_refresh_auto。'),
+				_('调度目标：subscription.refresh。'),
 				E('br'),
 				_('手动刷新节点快照保持不变，不会发送 Telegram 通知。')
 			])

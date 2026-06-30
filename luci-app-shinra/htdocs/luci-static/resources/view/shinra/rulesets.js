@@ -40,6 +40,25 @@ const callRulesetDownloadRequiredStatus = rpc.declare({
 	expect: { '': {} }
 });
 
+const callRulesetDownloadOneStart = rpc.declare({
+	object: 'shinra',
+	method: 'ruleset_download_one_start',
+	params: [ 'tag' ],
+	expect: { '': {} }
+});
+
+const callRulesetDownloadOneStatus = rpc.declare({
+	object: 'shinra',
+	method: 'ruleset_download_one_status',
+	expect: { '': {} }
+});
+
+const callRulesetArtifactStatus = rpc.declare({
+	object: 'shinra',
+	method: 'ruleset_artifact_status',
+	expect: { '': {} }
+});
+
 const DEFAULT_POLICY = {
 	mode: 'remote',
 	auto_update: false,
@@ -57,10 +76,12 @@ let inventories = {
 	candidate: null,
 	required: null
 };
-let activeTab = 'required';
+let artifactStatus = {};
 let actionStatus = '';
 let actionStatusOk = true;
 let actionToken = 0;
+let downloadingTag = '';
+let rulesetListOpen = false;
 
 function dataOf(result) {
 	if (result && result.ok && result.data)
@@ -189,38 +210,37 @@ function delay(ms) {
 	});
 }
 
-function rulesetJobFrom(result) {
+function rulesetTaskFrom(result) {
 	const data = dataOf(result);
-	const state = data.state && typeof data.state === 'object' ? data.state : {};
-	const jobs = state.jobs && typeof state.jobs === 'object' ? state.jobs : {};
-	return jobs.ruleset_download_required && typeof jobs.ruleset_download_required === 'object' ? jobs.ruleset_download_required : {};
+	return data.task && typeof data.task === 'object' ? data.task : {};
 }
 
-function rulesetJobCounts(job) {
-	const completed = Number(job.completed_count || 0);
+function rulesetTaskCounts(task) {
+	const completed = Number(task.completed_count || 0);
+	const meta = task.meta && typeof task.meta === 'object' ? task.meta : {};
 	let text = _('\u8fdb\u5ea6 %d / %d\uff0c\u5df2\u66f4\u65b0 %d\uff0c\u672a\u53d8\u5316 %d\uff0c\u5931\u8d25 %d').format(
 		completed,
-		Number(job.required_count || 0),
-		Number(job.updated_count || 0),
-		Number(job.unchanged_count || 0),
-		Number(job.failed_count || 0)
+		Number(task.total_count || 0),
+		Number(task.updated_count || 0),
+		Number(task.unchanged_count || 0),
+		Number(task.failed_count || 0)
 	);
-	const checked = Number(job.checked_count || 0);
+	const checked = Number(task.checked_count || 0);
 	if (checked)
 		text += _('\uff1b\u5b8c\u6574\u6bd4\u5bf9 %d').format(checked);
-	if (job.current_tag)
-		text += _('\uff1b\u5f53\u524d %s').format(job.current_tag);
-	if (job.current_url_redacted)
-		text += _('\uff1b\u6765\u6e90 %s').format(job.current_url_redacted);
-	if (job.last_error)
-		text += _('\uff1b\u6700\u8fd1\u9519\u8bef %s').format(job.last_error);
+	if (task.current_item)
+		text += _('\uff1b\u5f53\u524d %s').format(task.current_item);
+	if (meta.current_url_redacted)
+		text += _('\uff1b\u6765\u6e90 %s').format(meta.current_url_redacted);
+	if (task.last_error)
+		text += _('\uff1b\u6700\u8fd1\u9519\u8bef %s').format(task.last_error);
 	return text;
 }
 
-function rulesetJobStatusText(job) {
-	const status = job.status || '-';
-	const counts = rulesetJobCounts(job);
-	const message = job.message || '';
+function rulesetTaskStatusText(task) {
+	const status = task.status || '-';
+	const counts = rulesetTaskCounts(task);
+	const message = task.message || '';
 
 	if (status === 'starting')
 		return _('\u89c4\u5219\u96c6\u540c\u6b65\u5df2\u6392\u961f\u3002');
@@ -234,6 +254,23 @@ function rulesetJobStatusText(job) {
 		return _('\u89c4\u5219\u96c6\u540c\u6b65\u5931\u8d25\uff1a%s').format(message || counts);
 
 	return message || _('\u672a\u89c2\u6d4b\u5230\u89c4\u5219\u96c6\u540c\u6b65\u72b6\u6001\u3002');
+}
+
+function rulesetDownloadOneStatusText(task) {
+	const meta = task.meta && typeof task.meta === 'object' ? task.meta : {};
+	const tag = task.current_item || meta.tag || downloadingTag || '-';
+	const status = task.status || '-';
+
+	if (status === 'starting')
+		return _('\u89c4\u5219\u96c6 %s \u4e0b\u8f7d\u5df2\u6392\u961f\u3002').format(tag);
+	if (status === 'running')
+		return _('\u6b63\u5728\u4e0b\u8f7d\u89c4\u5219\u96c6 %s\u3002').format(tag);
+	if (status === 'success')
+		return _('\u89c4\u5219\u96c6 %s \u5df2\u4e0b\u8f7d\u3002').format(tag);
+	if (status === 'failed')
+		return _('\u89c4\u5219\u96c6 %s \u4e0b\u8f7d\u5931\u8d25\uff1a%s').format(tag, task.last_error || task.message || '-');
+
+	return task.message || _('\u672a\u89c2\u6d4b\u5230\u89c4\u5219\u96c6\u4e0b\u8f7d\u72b6\u6001\u3002');
 }
 
 function updatePolicyFromFields() {
@@ -291,40 +328,14 @@ function localSyncSettings() {
 
 	return E('div', { 'style': sectionStyle() }, [
 		E('h3', { 'style': 'margin-top: 0;' }, _('\u672c\u5730\u540c\u6b65\u8bbe\u7f6e')),
-		E('div', { 'style': 'display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: .75rem; margin-bottom: .75rem;' }, [
-			E('label', {}, [
-				E('div', { 'style': 'font-size: 12px; color: #667; font-weight: 700; margin-bottom: .25rem;' }, _('\u672c\u5730\u76ee\u5f55')),
-				E('input', { 'class': 'cbi-input-text', 'readonly': 'readonly', 'value': '/etc/shinra/rules' })
-			]),
-			E('label', {}, [
-				E('div', { 'style': 'font-size: 12px; color: #667; font-weight: 700; margin-bottom: .25rem;' }, _('\u4e0b\u8f7d\u7b56\u7565')),
-				E('select', { 'id': 'shinra-ruleset-fetch-strategy', 'class': 'cbi-input-select', 'style': 'width: 100%;' }, [
-					E('option', { 'value': 'direct', 'selected': policy.fetch_strategy === 'direct' ? 'selected' : null }, _('\u76f4\u8fde')),
-					E('option', { 'value': 'proxy', 'selected': policy.fetch_strategy === 'proxy' ? 'selected' : null }, _('\u4ee3\u7406'))
-				])
-			]),
-			E('label', {}, [
-				E('div', { 'style': 'font-size: 12px; color: #667; font-weight: 700; margin-bottom: .25rem;' }, _('\u6bcf\u65e5\u540c\u6b65\u65f6\u95f4')),
-				E('input', {
-					'id': 'shinra-ruleset-update-hour',
-					'class': 'cbi-input-text',
-					'type': 'number',
-					'min': '0',
-					'max': '23',
-					'value': String(policy.update_hour)
-				})
-			]),
-			E('label', { 'style': 'display: flex; gap: .5rem; align-items: center; margin-top: 1.45rem;' }, [
-				E('input', { 'id': 'shinra-ruleset-auto-update', 'type': 'checkbox', 'checked': policy.auto_update ? 'checked' : null }),
-				E('span', {}, _('\u6bcf\u65e5\u81ea\u52a8\u540c\u6b65'))
-			])
-		]),
-		E('div', { 'style': 'display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: .75rem; margin-bottom: .75rem;' }, [
+		E('h4', { 'style': 'margin: .25rem 0 .65rem;' }, _('\u89c4\u5219\u96c6\u6765\u6e90')),
+		E('div', { 'style': 'display: grid; grid-template-columns: minmax(0, 1fr); gap: .75rem; margin-bottom: 1rem;' }, [
 			E('label', {}, [
 				E('div', { 'style': 'font-size: 12px; color: #667; font-weight: 700; margin-bottom: .25rem;' }, _('\u79c1\u6709\u4ed3\u5e93')),
 				E('input', {
 					'id': 'shinra-ruleset-private-repo',
 					'class': 'cbi-input-text',
+					'style': 'width: 100%; box-sizing: border-box;',
 					'placeholder': _('\u53ef\u9009\u7684\u79c1\u6709\u4ed3\u5e93\u5730\u5740'),
 					'value': policy.repositories.private
 				})
@@ -334,26 +345,104 @@ function localSyncSettings() {
 				E('input', {
 					'id': 'shinra-ruleset-public-repo',
 					'class': 'cbi-input-text',
+					'style': 'width: 100%; box-sizing: border-box;',
 					'value': policy.repositories.public
 				})
+			])
+		]),
+		E('h4', { 'style': 'margin: .25rem 0 .65rem;' }, _('\u540c\u6b65\u65b9\u5f0f')),
+		E('div', { 'style': 'display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: .6rem; margin-bottom: .65rem; align-items: start;' }, [
+			E('label', {}, [
+				E('div', { 'style': 'font-size: 12px; color: #667; font-weight: 700; margin-bottom: .25rem;' }, _('\u4e0b\u8f7d\u7b56\u7565')),
+				E('select', { 'id': 'shinra-ruleset-fetch-strategy', 'class': 'cbi-input-select', 'style': 'width: 100%;' }, [
+					E('option', { 'value': 'direct', 'selected': policy.fetch_strategy === 'direct' ? 'selected' : null }, _('\u76f4\u8fde')),
+					E('option', { 'value': 'proxy', 'selected': policy.fetch_strategy === 'proxy' ? 'selected' : null }, _('\u4ee3\u7406'))
+				])
+			]),
+			E('div', { 'style': 'display: flex; gap: .65rem; align-items: flex-end; flex-wrap: wrap;' }, [
+				E('label', { 'style': 'display: flex; gap: .5rem; align-items: center; min-height: 32px; margin-bottom: .15rem;' }, [
+					E('input', {
+						'id': 'shinra-ruleset-auto-update',
+						'type': 'checkbox',
+						'checked': policy.auto_update ? 'checked' : null,
+						'change': function(ev) {
+							updatePolicyFromFields();
+							policy.auto_update = !!ev.target.checked;
+							redraw();
+						}
+					}),
+					E('span', {}, _('\u6bcf\u65e5\u81ea\u52a8\u540c\u6b65'))
+				]),
+				policy.auto_update ? E('label', { 'style': 'min-width: 130px; max-width: 160px;' }, [
+					E('div', { 'style': 'font-size: 12px; color: #667; font-weight: 700; margin-bottom: .2rem;' }, _('\u6bcf\u65e5\u540c\u6b65\u65f6\u95f4')),
+					E('input', {
+						'id': 'shinra-ruleset-update-hour',
+						'class': 'cbi-input-text',
+						'type': 'number',
+						'min': '0',
+						'max': '23',
+						'value': String(policy.update_hour),
+						'style': 'width: 100%; box-sizing: border-box;'
+					})
+				]) : ''
 			])
 		]),
 		E('div', { 'style': 'color: #667;' }, _('\u4e0b\u8f7d\u987a\u5e8f\uff1a\u79c1\u6709\u4ed3\u5e93\u4f18\u5148\uff0c\u516c\u5171\u4ed3\u5e93\u515c\u5e95\uff0c\u6700\u540e\u4f7f\u7528\u6a21\u677f\u4e2d\u7684\u539f\u59cb\u5730\u5740\u3002'))
 	]);
 }
 
-function tabButton(tab, label) {
-	return E('button', {
-		'type': 'button',
-		'class': activeTab === tab ? 'btn cbi-button cbi-button-positive' : 'btn cbi-button',
-		'click': function(ev) {
-			ev.preventDefault();
-			actionToken++;
-			activeTab = tab;
-			actionStatus = '';
-			redraw();
-		}
-	}, label);
+function artifactStatusData() {
+	return artifactStatus && typeof artifactStatus === 'object' && !Array.isArray(artifactStatus) ? artifactStatus : {};
+}
+
+function artifactNotice(state) {
+	if (state.pending)
+		return E('div', {
+			'style': 'border: 1px solid #f59e0b; border-radius: 8px; padding: .75rem; background: #fffbeb; color: #92400e; margin-top: .75rem;'
+		}, _('规则集已更新，等待下一次配置应用成功后确认为可运行版本。如果应用失败，Shinra 会自动恢复上一组已确认规则集。'));
+
+	if (!state.last_good_exists || Number(state.last_good_count || 0) <= 0)
+		return E('div', {
+			'style': 'border: 1px solid #bfdbfe; border-radius: 8px; padding: .75rem; background: #eff6ff; color: #1e40af; margin-top: .75rem;'
+		}, _('尚未建立已确认规则集基线。首次成功应用本地规则集后会建立。'));
+
+	return E('div', {
+		'style': 'border: 1px solid #bbf7d0; border-radius: 8px; padding: .75rem; background: #f0fdf4; color: #166534; margin-top: .75rem;'
+	}, _('本地规则集已有已确认可运行版本。'));
+}
+
+function artifactStatusPanel() {
+	if (policy.mode !== 'local')
+		return E('div', { 'style': 'display: none;' }, '');
+
+	const state = artifactStatusData();
+	const changed = Number(state.changed_count || 0);
+	const lastGoodCount = Number(state.last_good_count || 0);
+
+	return E('div', { 'style': sectionStyle() }, [
+		E('h3', { 'style': 'margin-top: 0;' }, _('本地规则集保护')),
+		E('div', { 'style': 'display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: .65rem;' }, [
+			statBox(_('等待运行验证'), state.pending ? _('是') : _('否')),
+			statBox(_('待验证文件'), changed),
+			statBox(_('已确认文件'), lastGoodCount),
+			statBox(_('事务状态'), state.pending_status || '-')
+		]),
+		artifactNotice(state),
+		E('div', { 'style': 'display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: .65rem; margin-top: .75rem; color: #667; overflow-wrap: anywhere;' }, [
+			E('div', {}, [
+				E('strong', {}, _('Last-good 目录')),
+				E('div', {}, valueText(state.last_good_dir))
+			]),
+			E('div', {}, [
+				E('strong', {}, _('Pending 文件')),
+				E('div', {}, valueText(state.pending_path))
+			]),
+			E('div', {}, [
+				E('strong', {}, _('更新时间')),
+				E('div', {}, valueText(state.pending_updated_at || state.last_good_mtime))
+			])
+		])
+	]);
 }
 
 function timeText(value) {
@@ -377,7 +466,7 @@ function rulesetStatus(entry) {
 	if (!entry || entry.status === 'missing')
 		return statusPill(_('\u7f3a\u5931'), 'error');
 	if (entry.status === 'extra')
-		return statusPill(_('\u672c\u5730\u591a\u4f59'), 'warning');
+		return statusPill(_('\u672a\u4f7f\u7528'), 'warning');
 	return statusPill(_('\u5df2\u5c31\u7eea'), 'ok');
 }
 
@@ -388,91 +477,127 @@ function sourceText(entry) {
 	return valueText(entry && (entry.source_url_redacted || entry.source_url));
 }
 
-function readinessSummary(inv) {
-	const summary = inv.summary || {};
-	return E('div', { 'style': 'display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: .65rem; margin: .75rem 0;' }, [
-		statBox(_('\u6a21\u677f\u9700\u8981'), summary.required_count || 0),
-		statBox(_('\u5df2\u5c31\u7eea'), summary.ready_count || 0),
-		statBox(_('\u7f3a\u5931'), summary.missing_count || 0),
-		statBox(_('\u672c\u5730\u603b\u6570'), summary.local_count || 0),
-		statBox(_('\u672c\u5730\u591a\u4f59'), summary.local_extra_count || 0)
+function templateRequiredText(entry) {
+	return entry && entry.required === false ? _('\u5426') : _('\u662f');
+}
+
+function pendingRulesetTags() {
+	const state = artifactStatusData();
+	const files = Array.isArray(state.changed_files) ? state.changed_files : [];
+	let tags = {};
+
+	for (let item of files) {
+		if (item && item.tag)
+			tags[item.tag] = true;
+	}
+
+	return tags;
+}
+
+function isPendingRuleset(tag) {
+	const state = artifactStatusData();
+	if (!state.pending)
+		return false;
+	return pendingRulesetTags()[tag] == true;
+}
+
+function rowStatus(entry) {
+	if (entry && isPendingRuleset(entry.tag))
+		return statusPill(_('\u5f85\u9a8c\u8bc1'), 'warning');
+	return rulesetStatus(entry);
+}
+
+function rulesetItems(inv) {
+	const entries = Array.isArray(inv.entries) ? inv.entries : [];
+	const extras = Array.isArray(inv.extras) ? inv.extras : [];
+	let items = [];
+
+	for (let entry of entries)
+		items.push(entry);
+	for (let entry of extras)
+		items.push(entry);
+
+	return items;
+}
+
+function rulesetRows(items) {
+	if (!items.length)
+		return [ E('div', { 'style': 'padding: .8rem; color: #667; text-align: center;' }, _('\u6ca1\u6709\u89c2\u6d4b\u5230\u89c4\u5219\u96c6\u3002')) ];
+
+	return items.map(function(entry) {
+		const required = !(entry && entry.required === false);
+		const busy = downloadingTag && entry && entry.tag === downloadingTag;
+		return E('div', { 'style': 'display: grid; grid-template-columns: minmax(150px, 1.1fr) 92px 84px minmax(220px, 1.7fr) 86px 120px minmax(220px, 1.8fr) 98px; gap: .75rem; padding: .5rem 0; border-bottom: 1px solid #eee; align-items: center;' }, [
+			E('div', { 'style': 'overflow-wrap: anywhere; font-weight: 600;' }, valueText(entry && entry.tag)),
+			E('div', {}, rowStatus(entry)),
+			E('div', { 'style': 'color: #667;' }, templateRequiredText(entry)),
+			E('div', { 'style': 'overflow-wrap: anywhere; color: #667;' }, valueText(entry && entry.local_path)),
+			E('div', { 'style': 'color: #667; text-align: right;' }, bytesText(Number(entry && entry.local_size || 0))),
+			E('div', { 'style': 'color: #667; text-align: right;' }, timeText(entry && entry.local_mtime)),
+			E('div', { 'style': 'overflow-wrap: anywhere; white-space: pre-line; color: #667;' }, sourceText(entry)),
+			E('div', {}, required ? E('button', {
+				'type': 'button',
+				'class': 'btn cbi-button',
+				'disabled': busy ? 'disabled' : null,
+				'click': function(ev) {
+					ev.preventDefault();
+					return downloadOneRuleset(entry.tag);
+				}
+			}, busy ? _('\u4e0b\u8f7d\u4e2d') : entry.status === 'missing' ? _('\u4e0b\u8f7d') : _('\u91cd\u65b0\u4e0b\u8f7d')) : '-')
+		]);
+	});
+}
+
+function rulesetListContent(items) {
+	return E('div', { 'style': 'overflow-x: auto; margin-top: .75rem;' }, [
+		E('div', { 'style': 'min-width: 1260px;' }, [
+			E('div', { 'style': 'display: grid; grid-template-columns: minmax(150px, 1.1fr) 92px 84px minmax(220px, 1.7fr) 86px 120px minmax(220px, 1.8fr) 98px; gap: .75rem; color: #667; font-size: 12px; padding-bottom: .4rem; border-bottom: 1px solid #ddd;' }, [
+				E('div', {}, _('\u6807\u7b7e')),
+				E('div', {}, _('\u72b6\u6001')),
+				E('div', {}, _('\u6a21\u677f\u9700\u8981')),
+				E('div', {}, _('\u672c\u5730\u6587\u4ef6')),
+				E('div', { 'style': 'text-align: right;' }, _('\u5927\u5c0f')),
+				E('div', { 'style': 'text-align: right;' }, _('\u4fee\u6539\u65f6\u95f4')),
+				E('div', {}, _('\u4e0b\u8f7d\u6765\u6e90')),
+				E('div', {}, _('\u64cd\u4f5c'))
+			]),
+			E('div', {}, rulesetRows(items))
+		])
 	]);
-}
-
-function requiredRows(entries) {
-	if (!entries.length)
-		return [ E('tr', {}, [ E('td', { 'colspan': '7', 'style': 'padding: .8rem; color: #667; text-align: center;' }, _('\u6a21\u677f\u6ca1\u6709\u5f15\u7528\u89c4\u5219\u96c6\u3002')) ]) ];
-
-	return entries.map(function(entry) {
-		return E('tr', {}, [
-			E('td', { 'style': 'overflow-wrap: anywhere; font-weight: 600;' }, valueText(entry.tag)),
-			E('td', {}, rulesetStatus(entry)),
-			E('td', { 'style': 'overflow-wrap: anywhere;' }, valueText(entry.local_path)),
-			E('td', { 'style': 'text-align: right;' }, bytesText(Number(entry.local_size || 0))),
-			E('td', { 'style': 'text-align: right;' }, timeText(entry.local_mtime)),
-			E('td', { 'style': 'overflow-wrap: anywhere; white-space: pre-line;' }, sourceText(entry)),
-			E('td', {}, entry.status === 'missing' ? _('\u6a21\u677f\u9700\u8981\uff0c\u672c\u5730\u7f3a\u5931') : '-')
-		]);
-	});
-}
-
-function extraRows(entries) {
-	if (!entries.length)
-		return [ E('tr', {}, [ E('td', { 'colspan': '5', 'style': 'padding: .8rem; color: #667; text-align: center;' }, _('\u6ca1\u6709\u672c\u5730\u591a\u4f59\u89c4\u5219\u96c6\u3002')) ]) ];
-
-	return entries.map(function(entry) {
-		return E('tr', {}, [
-			E('td', { 'style': 'overflow-wrap: anywhere; font-weight: 600;' }, valueText(entry.tag)),
-			E('td', {}, rulesetStatus(entry)),
-			E('td', { 'style': 'overflow-wrap: anywhere;' }, valueText(entry.local_path)),
-			E('td', { 'style': 'text-align: right;' }, bytesText(Number(entry.local_size || 0))),
-			E('td', { 'style': 'text-align: right;' }, timeText(entry.local_mtime))
-		]);
-	});
 }
 
 function rulesetList() {
 	const inv = requiredInventory();
-	const entries = Array.isArray(inv.entries) ? inv.entries : [];
-	const extras = Array.isArray(inv.extras) ? inv.extras : [];
-	const showingExtras = activeTab === 'extra';
+	const items = rulesetItems(inv);
+	const summary = inv.summary || {};
+	const artifact = artifactStatusData();
+	let suffix = '';
+	if (artifact.pending)
+		suffix = _('\uff0c\u5f85\u8fd0\u884c\u9a8c\u8bc1 %d').format(Number(artifact.changed_count || 0));
+	else if (Number(artifact.last_good_count || 0) > 0)
+		suffix = _('\uff0c\u5df2\u786e\u8ba4\u57fa\u7ebf %d').format(Number(artifact.last_good_count || 0));
+	const subtitle = _('\u9700\u8981 %d\uff0c\u5df2\u5c31\u7eea %d\uff0c\u7f3a\u5931 %d\uff0c\u672a\u4f7f\u7528 %d%s').format(
+		summary.required_count || 0,
+		summary.ready_count || 0,
+		summary.missing_count || 0,
+		summary.local_extra_count || 0,
+		suffix
+	);
 
-	return E('div', { 'style': sectionStyle() }, [
-		E('div', { 'style': 'display: flex; justify-content: space-between; align-items: center; gap: .75rem; flex-wrap: wrap; margin-bottom: .75rem;' }, [
-			E('h3', { 'style': 'margin: 0;' }, _('\u89c4\u5219\u96c6\u5bf9\u6bd4')),
-			E('div', { 'style': 'display: flex; gap: .5rem; flex-wrap: wrap;' }, [
-				tabButton('required', _('\u6a21\u677f\u6240\u9700')),
-				tabButton('extra', _('\u672c\u5730\u591a\u4f59'))
-			])
+	return E('details', {
+		'open': rulesetListOpen ? 'open' : null,
+		'toggle': function(ev) {
+			rulesetListOpen = !!ev.target.open;
+		},
+		'style': 'border: 1px solid #dfe3e8; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; background: #fff;'
+	}, [
+		E('summary', { 'style': 'cursor: pointer; list-style-position: inside;' }, [
+			E('span', { 'style': 'font-weight: 700;' }, _('\u89c4\u5219\u96c6\u5217\u8868')),
+			E('span', { 'style': 'display: block; color: #667; font-size: 12px; margin-top: .25rem;' }, subtitle)
 		]),
-		E('div', { 'style': 'color: #667; margin-bottom: .75rem; overflow-wrap: anywhere;' },
-			_('\u5bf9\u6bd4 main-profile.json \u5f15\u7528\u7684\u89c4\u5219\u96c6\u4e0e /etc/shinra/rules \u672c\u5730\u6587\u4ef6\u3002')),
-		readinessSummary(inv),
-		E('div', { 'style': 'overflow-x: auto;' }, [
-			showingExtras ?
-				E('table', { 'class': 'table', 'style': 'min-width: 760px;' }, [
-					E('thead', {}, [ E('tr', {}, [
-						E('th', {}, _('\u6807\u7b7e')),
-						E('th', {}, _('\u72b6\u6001')),
-						E('th', {}, _('\u672c\u5730\u6587\u4ef6')),
-						E('th', { 'style': 'text-align: right;' }, _('\u5927\u5c0f')),
-						E('th', { 'style': 'text-align: right;' }, _('\u4fee\u6539\u65f6\u95f4'))
-					]) ]),
-					E('tbody', {}, extraRows(extras))
-				]) :
-				E('table', { 'class': 'table', 'style': 'min-width: 980px;' }, [
-					E('thead', {}, [ E('tr', {}, [
-						E('th', {}, _('\u6807\u7b7e')),
-						E('th', {}, _('\u72b6\u6001')),
-						E('th', {}, _('\u672c\u5730\u6587\u4ef6')),
-						E('th', { 'style': 'text-align: right;' }, _('\u5927\u5c0f')),
-						E('th', { 'style': 'text-align: right;' }, _('\u4fee\u6539\u65f6\u95f4')),
-						E('th', {}, _('\u4e0b\u8f7d\u6765\u6e90')),
-						E('th', {}, _('\u8bca\u65ad'))
-					]) ]),
-					E('tbody', {}, requiredRows(entries))
-				])
-		])
+		E('div', { 'style': 'color: #667; margin-top: .75rem; overflow-wrap: anywhere;' },
+			_('\u4ee5\u5217\u8868\u5f62\u5f0f\u5c55\u793a main-profile.json \u5f15\u7528\u7684\u89c4\u5219\u96c6\u548c /etc/shinra/rules \u672c\u5730\u6587\u4ef6\u72b6\u6001\u3002')),
+		rulesetListContent(items)
 	]);
 }
 
@@ -510,11 +635,11 @@ function pollRulesetSync(token, attempt) {
 			return refreshAll();
 		}
 
-		const job = rulesetJobFrom(statusResult);
-		const status = job.status || '';
+		const task = rulesetTaskFrom(statusResult);
+		const status = task.status || '';
 
 		if (status === 'starting' || status === 'running') {
-			setStatus(rulesetJobStatusText(job), true);
+			setStatus(rulesetTaskStatusText(task), true);
 			if (attempt >= 180) {
 				setStatus(_('\u89c4\u5219\u96c6\u540c\u6b65\u4ecd\u5728\u540e\u53f0\u8fd0\u884c\u3002\u7a0d\u540e\u8fd4\u56de\u53ef\u67e5\u770b\u7ed3\u679c\u3002'), true);
 				return refreshAll();
@@ -526,11 +651,79 @@ function pollRulesetSync(token, attempt) {
 		}
 
 		const ok = status === 'success' || status === 'partial';
-		setStatus(rulesetJobStatusText(job), ok && Number(job.failed_count || 0) === 0);
+		setStatus(rulesetTaskStatusText(task), ok && Number(task.failed_count || 0) === 0);
 		return refreshAll();
 	}).catch(function(error) {
 		if (token !== actionToken)
 			return;
+		setStatus(error.message || String(error), false);
+		return refreshAll();
+	});
+}
+
+function pollRulesetDownloadOne(token, attempt) {
+	return callRulesetDownloadOneStatus().then(function(statusResult) {
+		if (token !== actionToken)
+			return statusResult;
+		notifyFailure(statusResult);
+		if (!statusResult || !statusResult.ok) {
+			setStatus(_('\u8bfb\u53d6\u89c4\u5219\u96c6\u4e0b\u8f7d\u72b6\u6001\u5931\u8d25\u3002'), false);
+			downloadingTag = '';
+			return refreshAll();
+		}
+
+		const task = rulesetTaskFrom(statusResult);
+		const status = task.status || '';
+
+		if (status === 'starting' || status === 'running') {
+			setStatus(rulesetDownloadOneStatusText(task), true);
+			if (attempt >= 120) {
+				setStatus(_('\u89c4\u5219\u96c6\u4e0b\u8f7d\u4ecd\u5728\u540e\u53f0\u8fd0\u884c\u3002\u7a0d\u540e\u8fd4\u56de\u53ef\u67e5\u770b\u7ed3\u679c\u3002'), true);
+				downloadingTag = '';
+				return refreshAll();
+			}
+
+			return delay(1500).then(function() {
+				return pollRulesetDownloadOne(token, attempt + 1);
+			});
+		}
+
+		downloadingTag = '';
+		setStatus(rulesetDownloadOneStatusText(task), status === 'success');
+		return refreshAll();
+	}).catch(function(error) {
+		if (token !== actionToken)
+			return;
+		downloadingTag = '';
+		setStatus(error.message || String(error), false);
+		return refreshAll();
+	});
+}
+
+function downloadOneRuleset(tag) {
+	const token = ++actionToken;
+	downloadingTag = tag || '';
+	rulesetListOpen = true;
+	setStatus(_('\u6b63\u5728\u542f\u52a8\u89c4\u5219\u96c6 %s \u4e0b\u8f7d...').format(downloadingTag || '-'), true);
+	redraw();
+
+	return callRulesetDownloadOneStart(tag).then(function(startResult) {
+		if (token !== actionToken)
+			return startResult;
+		notifyFailure(startResult);
+		if (!startResult || !startResult.ok) {
+			downloadingTag = '';
+			setStatus(_('\u542f\u52a8\u89c4\u5219\u96c6\u4e0b\u8f7d\u5931\u8d25\u3002'), false);
+			return refreshAll();
+		}
+
+		const task = rulesetTaskFrom(startResult);
+		setStatus(rulesetDownloadOneStatusText(task), true);
+		return pollRulesetDownloadOne(token, 0);
+	}).catch(function(error) {
+		if (token !== actionToken)
+			return;
+		downloadingTag = '';
 		setStatus(error.message || String(error), false);
 		return refreshAll();
 	});
@@ -561,8 +754,8 @@ function syncRulesets() {
 			return refreshAll();
 		}
 
-		const job = rulesetJobFrom(startResult);
-		setStatus(rulesetJobStatusText(job), true);
+		const task = rulesetTaskFrom(startResult);
+		setStatus(rulesetTaskStatusText(task), true);
 		return pollRulesetSync(token, 0);
 	}).catch(function(error) {
 		if (token !== actionToken)
@@ -574,13 +767,15 @@ function syncRulesets() {
 function refreshAll() {
 	return Promise.all([
 		callRulesetPolicyGet(),
-		callRulesetRequiredInventory()
+		callRulesetRequiredInventory(),
+		callRulesetArtifactStatus()
 	]).then(function(results) {
 		for (let i = 0; i < results.length; i++)
 			notifyFailure(results[i]);
 
 		policy = normalizePolicy(dataOf(results[0]).policy);
 		inventories.required = dataOf(results[1]);
+		artifactStatus = dataOf(results[2]);
 		redraw();
 		return results;
 	}).catch(function(error) {
@@ -608,19 +803,23 @@ return view.extend({
 	load: function() {
 		return Promise.all([
 			callRulesetPolicyGet(),
-			callRulesetRequiredInventory()
+			callRulesetRequiredInventory(),
+			callRulesetArtifactStatus()
 		]);
 	},
 
 	render: function(results) {
 		const policyResult = results && results[0] ? results[0] : {};
 		const requiredResult = results && results[1] ? results[1] : {};
+		const artifactResult = results && results[2] ? results[2] : {};
 
 		notifyFailure(policyResult);
 		notifyFailure(requiredResult);
+		notifyFailure(artifactResult);
 
 		policy = normalizePolicy(dataOf(policyResult).policy);
 		inventories.required = dataOf(requiredResult);
+		artifactStatus = dataOf(artifactResult);
 
 		return renderPage();
 	}

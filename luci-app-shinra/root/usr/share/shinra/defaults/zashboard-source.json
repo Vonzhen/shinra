@@ -7,7 +7,8 @@
     "owner": "Zephyruso",
     "repo": "zashboard",
     "asset_pattern": "dist.zip",
-    "proxy_prefix": "https://gh-proxy.com/"
+    "release_api_url": "https://api.github.com/repos/Zephyruso/zashboard/releases/latest",
+    "asset_download_base": "https://github.com/Zephyruso/zashboard/releases/download"
   },
   "installed": {
     "version": "",

@@ -9,7 +9,8 @@ import { Success, Fail } from 'shinra.core.result';
 import { ERR } from 'shinra.core.error';
 import { PATH } from 'shinra.core.constants';
 import { read_optional_text, write_text_atomic, parse_json_object, request_content, request_keys, json_stringify, file_exists, ExecSafe } from 'shinra.core.utils';
-import { fetch_text, fetch_file } from 'shinra.resource_fetch';
+import { fetch_text } from 'shinra.resource_fetch';
+import { resource_stage_dir, resource_fetch_file, resource_promote_dir, resource_cleanup } from 'shinra.core.resource';
 import { validate_fetch_strategy } from 'shinra.subscription_policy';
 
 function default_zashboard_source() {
@@ -22,7 +23,8 @@ function default_zashboard_source() {
 			owner: "Zephyruso",
 			repo: "zashboard",
 			asset_pattern: "dist.zip",
-			proxy_prefix: "https://gh-proxy.com/"
+			release_api_url: "https://api.github.com/repos/Zephyruso/zashboard/releases/latest",
+			asset_download_base: "https://github.com/Zephyruso/zashboard/releases/download"
 		},
 		installed: {
 			version: "",
@@ -48,6 +50,13 @@ function default_zashboard_source() {
 
 function valid_url(url) {
 	return index(url, "http://") == 0 || index(url, "https://") == 0;
+}
+
+function trim_trailing_slash(value) {
+	let text = "" + value;
+	while (length(text) && substr(text, length(text) - 1) == "/")
+		text = substr(text, 0, length(text) - 1);
+	return text;
 }
 
 function trim_text(value) {
@@ -99,8 +108,10 @@ function normalize_repository(raw) {
 			result.repo = raw.repo;
 		if (type(raw.asset_pattern) == "string" && raw.asset_pattern != "")
 			result.asset_pattern = raw.asset_pattern;
-		if (type(raw.proxy_prefix) == "string")
-			result.proxy_prefix = raw.proxy_prefix;
+		if (type(raw.release_api_url) == "string" && raw.release_api_url != "")
+			result.release_api_url = raw.release_api_url;
+		if (type(raw.asset_download_base) == "string" && raw.asset_download_base != "")
+			result.asset_download_base = raw.asset_download_base;
 	}
 
 	if (result.type != "github")
@@ -111,8 +122,10 @@ function normalize_repository(raw) {
 		die("repository.repo is required");
 	if (!length(result.asset_pattern))
 		die("repository.asset_pattern is required");
-	if (length(result.proxy_prefix) && !valid_url(result.proxy_prefix))
-		die("repository.proxy_prefix must start with http:// or https://");
+	if (!length(result.release_api_url) || !valid_url(result.release_api_url))
+		die("repository.release_api_url must start with http:// or https://");
+	if (!length(result.asset_download_base) || !valid_url(result.asset_download_base))
+		die("repository.asset_download_base must start with http:// or https://");
 
 	return result;
 }
@@ -211,19 +224,23 @@ function panel_status(source) {
 	};
 }
 
+function normalize_static_permissions(trace_id, dir) {
+	if (!file_exists(dir))
+		return;
+
+	ExecSafe(trace_id, [ "find", dir, "-type", "d", "-exec", "chmod", "0755", "{}", ";" ]);
+	ExecSafe(trace_id, [ "find", dir, "-type", "f", "-exec", "chmod", "0644", "{}", ";" ]);
+}
+
+function normalize_zashboard_permissions(trace_id) {
+	ExecSafe(trace_id, [ "chmod", "0755", "/www/shinra" ]);
+	normalize_static_permissions(trace_id, PATH.ZASHBOARD_DIR);
+	normalize_static_permissions(trace_id, PATH.ZASHBOARD_DIR + ".last-good");
+}
+
 function zashboard_panel_policy() {
 	let source = read_zashboard_source();
 	return source.panel_api;
-}
-
-function proxied_url(url, repository) {
-	if (length(repository.proxy_prefix))
-		return repository.proxy_prefix + url;
-	return url;
-}
-
-function github_latest_api_url(repository) {
-	return "https://api.github.com/repos/" + repository.owner + "/" + repository.repo + "/releases/latest";
 }
 
 function pattern_match(name, pattern) {
@@ -266,9 +283,9 @@ function release_asset(release, pattern) {
 
 function check_latest_release(trace_id, source) {
 	let repository = normalize_repository(source.repository);
-	let api_url = github_latest_api_url(repository);
+	let api_url = repository.release_api_url;
 	let strategy = source.fetch_strategy == "proxy" ? "proxy" : "direct";
-	let fetched = fetch_text(trace_id, proxied_url(api_url, repository), strategy, {
+	let fetched = fetch_text(trace_id, api_url, strategy, {
 		timeout_sec: 30,
 		min_bytes: 16,
 		headers: [ "Accept: application/vnd.github+json" ]
@@ -286,7 +303,7 @@ function check_latest_release(trace_id, source) {
 		version: version,
 		asset_name: asset.name,
 		asset_url: asset.url,
-		download_url: proxied_url(asset.url, repository),
+		download_url: trim_trailing_slash(repository.asset_download_base) + "/" + version + "/" + asset.name,
 		checked_at: now_utc(trace_id),
 		result: "ok",
 		update_available: source.installed.version != version,
@@ -295,51 +312,54 @@ function check_latest_release(trace_id, source) {
 }
 
 function install_archive_url(trace_id, url, strategy) {
-	let safe_trace = replace("" + trace_id, "/", "_");
-	let work_dir = "/tmp/shinra-zashboard-" + safe_trace;
+	let stage = resource_stage_dir("zashboard", trace_id);
+	let work_dir = stage.work_dir;
 	let archive = work_dir + "/zashboard.zip";
 	let unpack_dir = work_dir + "/unpack";
-	let stage_dir = work_dir + "/stage";
-	let old_dir = PATH.ZASHBOARD_DIR + ".old";
+	let stage_dir = stage.stage_dir;
 
-	ExecSafe(trace_id, [ "rm", "-rf", work_dir ]);
-	ExecSafe(trace_id, [ "mkdir", "-p", unpack_dir ]);
-	strategy = strategy == "proxy" ? "proxy" : "direct";
-	let fetched = fetch_file(trace_id, url, archive, strategy, { timeout_sec: 30, min_bytes: 16 });
-	if (!fetched.ok)
-		die("fetch failed: strategy=" + strategy + " " + fetched.error + " exit=" + fetched.exit_code + " stderr=" + fetched.stderr);
-	ExecSafe(trace_id, [ "unzip", "-q", archive, "-d", unpack_dir ]);
+	try {
+		ExecSafe(trace_id, [ "mkdir", "-p", unpack_dir ]);
+		strategy = strategy == "proxy" ? "proxy" : "direct";
+		let fetched = resource_fetch_file(trace_id, url, archive, strategy, { timeout_sec: 30, min_bytes: 16 });
+		if (!fetched.ok)
+			die("fetch failed: strategy=" + strategy + " " + fetched.error + " exit=" + fetched.exit_code + " stderr=" + fetched.stderr);
+		ExecSafe(trace_id, [ "unzip", "-q", archive, "-d", unpack_dir ]);
 
-	let candidates = [
-		unpack_dir,
-		unpack_dir + "/dist",
-		unpack_dir + "/zashboard",
-		unpack_dir + "/public"
-	];
+		let candidates = [
+			unpack_dir,
+			unpack_dir + "/dist",
+			unpack_dir + "/zashboard",
+			unpack_dir + "/public"
+		];
 
-	let selected = "";
-	for (let candidate in candidates) {
-		if (file_exists(candidate + "/index.html")) {
-			selected = candidate;
-			break;
+		let selected = "";
+		for (let candidate in candidates) {
+			if (file_exists(candidate + "/index.html")) {
+				selected = candidate;
+				break;
+			}
 		}
+
+		if (!length(selected))
+			die("Downloaded Zashboard archive does not contain index.html");
+
+		ExecSafe(trace_id, [ "mkdir", "-p", "/www/shinra" ]);
+		ExecSafe(trace_id, [ "cp", "-R", selected + "/.", stage_dir ]);
+		if (!file_exists(stage_dir + "/index.html"))
+			die("Staged Zashboard index.html missing");
+
+		let promoted = resource_promote_dir(stage_dir, PATH.ZASHBOARD_DIR, {
+			trace_id: trace_id,
+			last_good_dir: PATH.ZASHBOARD_DIR + ".last-good"
+		});
+		normalize_zashboard_permissions(trace_id);
+		resource_cleanup([ work_dir ]);
+		return promoted;
+	} catch (e) {
+		resource_cleanup([ work_dir ]);
+		die("" + e);
 	}
-
-	if (!length(selected))
-		die("Downloaded Zashboard archive does not contain index.html");
-
-	ExecSafe(trace_id, [ "mkdir", "-p", "/www/shinra" ]);
-	ExecSafe(trace_id, [ "rm", "-rf", stage_dir ]);
-	ExecSafe(trace_id, [ "cp", "-R", selected, stage_dir ]);
-	if (!file_exists(stage_dir + "/index.html"))
-		die("Staged Zashboard index.html missing");
-
-	ExecSafe(trace_id, [ "rm", "-rf", old_dir ]);
-	if (file_exists(PATH.ZASHBOARD_DIR))
-		ExecSafe(trace_id, [ "mv", PATH.ZASHBOARD_DIR, old_dir ]);
-	ExecSafe(trace_id, [ "mv", stage_dir, PATH.ZASHBOARD_DIR ]);
-	ExecSafe(trace_id, [ "rm", "-rf", old_dir ]);
-	ExecSafe(trace_id, [ "rm", "-rf", work_dir ]);
 }
 
 function zashboard_source_get(trace_id, req) {

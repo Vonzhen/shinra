@@ -5,10 +5,11 @@
 'use strict';
 
 import { stat } from 'fs';
-import { PATH, BIN, CONTROL_PLANE_PROXY } from 'shinra.core.constants';
+import { PATH, CONTROL_PLANE_PROXY } from 'shinra.core.constants';
 import { Success, Fail } from 'shinra.core.result';
 import { ERR } from 'shinra.core.error';
-import { read_text, write_runtime_text_atomic, parse_json_object, ensure_runtime_dir, file_exists, json_stringify, ExecResult } from 'shinra.core.utils';
+import { read_text, parse_json_object, file_exists, json_stringify_pretty } from 'shinra.core.utils';
+import { artifact_check_config, artifact_write_candidate } from 'shinra.core.artifact';
 import { normalize_subscriptions_policy } from 'shinra.subscription_policy';
 import { zashboard_panel_policy } from 'shinra.zashboard';
 
@@ -453,8 +454,8 @@ function validate_tun_contract(profile) {
 		tun_contract_fail("tun-in auto_redirect must be true");
 	if (tun.dns_mode != "hijack")
 		tun_contract_fail("tun-in dns_mode must be hijack");
-	if (tun.stack != "system")
-		tun_contract_fail("tun-in stack must be system");
+	if (tun.stack != "system" && tun.stack != "mixed")
+          tun_contract_fail("tun-in stack must be system or mixed");
 
 	if (type(profile.route) != "object" || profile.route == null || profile.route.auto_detect_interface != true)
 		tun_contract_fail("route.auto_detect_interface must be true");
@@ -867,9 +868,8 @@ function generate_candidate(trace_id, req) {
 		let stripped = strip_extensions(profile);
 		validate_references(profile);
 
-		ensure_runtime_dir();
-		let content = json_stringify(profile);
-		write_runtime_text_atomic(PATH.CANDIDATE_CONFIG, content + "\n");
+		let content = json_stringify_pretty(profile);
+		artifact_write_candidate(trace_id, content + "\n");
 
 		return Success({
 			path: PATH.CANDIDATE_CONFIG,
@@ -911,9 +911,9 @@ function check_candidate(trace_id, req) {
 		if (!file_exists(PATH.CANDIDATE_CONFIG))
 			return Fail(ERR.E_CANDIDATE_NOT_FOUND, "Candidate config not found", trace_id, PATH.CANDIDATE_CONFIG);
 
-		let result = ExecResult(trace_id, [ BIN.SING_BOX, "check", "-c", PATH.CANDIDATE_CONFIG ]);
-		if (result.code != 0)
-			return Fail(ERR.E_CANDIDATE_CHECK_FAILED, "Candidate check failed", trace_id, result.stderr || result.stdout);
+		let result = artifact_check_config(trace_id, PATH.CANDIDATE_CONFIG);
+		if (!result.ok)
+			return Fail(ERR.E_CANDIDATE_CHECK_FAILED, "Candidate check failed", trace_id, result.error);
 
 		return Success({
 			path: PATH.CANDIDATE_CONFIG,

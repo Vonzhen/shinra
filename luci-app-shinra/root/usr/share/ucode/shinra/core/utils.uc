@@ -73,6 +73,69 @@ function json_stringify(value) {
 	return sprintf("%J", value);
 }
 
+function json_pretty_indent(level) {
+	let out = "";
+	for (let i = 0; i < level; i++)
+		out = out + "  ";
+	return out;
+}
+
+function json_string_literal(value) {
+	return "\"" + json_escape(value) + "\"";
+}
+
+function json_stringify_pretty(value, level) {
+	if (level == null)
+		level = 0;
+
+	if (value == null)
+		return "null";
+
+	let kind = type(value);
+	if (kind == "string")
+		return json_string_literal(value);
+	if (kind == "int" || kind == "double")
+		return "" + value;
+	if (kind == "bool" || kind == "boolean")
+		return value ? "true" : "false";
+
+	if (kind == "array") {
+		if (length(value) == 0)
+			return "[]";
+
+		let items = [];
+		for (let item in value)
+			push(items, json_pretty_indent(level + 1) + json_stringify_pretty(item, level + 1));
+
+		let out = "[\n";
+		for (let i = 0; i < length(items); i++) {
+			if (i > 0)
+				out = out + ",\n";
+			out = out + items[i];
+		}
+		return out + "\n" + json_pretty_indent(level) + "]";
+	}
+
+	if (kind == "object") {
+		let items = [];
+		for (let key in value)
+			push(items, json_pretty_indent(level + 1) + json_string_literal(key) + ": " + json_stringify_pretty(value[key], level + 1));
+
+		if (length(items) == 0)
+			return "{}";
+
+		let out = "{\n";
+		for (let i = 0; i < length(items); i++) {
+			if (i > 0)
+				out = out + ",\n";
+			out = out + items[i];
+		}
+		return out + "\n" + json_pretty_indent(level) + "}";
+	}
+
+	return json_string_literal(value);
+}
+
 function ensure_run_dir() {
 	let info = stat("/var/run/shinra");
 	if (type(info) == "object" && info != null)
@@ -155,4 +218,4 @@ function read_optional_text(path) {
 	return data;
 }
 
-export { read_text, read_optional_text, write_text_atomic, write_runtime_text_atomic, parse_json_object, request_keys, request_content, shell_escape, json_escape, json_stringify, file_exists, ensure_runtime_dir, ensure_config_dir, ExecResult, ExecSafe };
+export { read_text, read_optional_text, write_text_atomic, write_runtime_text_atomic, parse_json_object, request_keys, request_content, shell_escape, json_escape, json_stringify, json_stringify_pretty, file_exists, ensure_runtime_dir, ensure_config_dir, ExecResult, ExecSafe };

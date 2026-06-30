@@ -12,7 +12,17 @@ chmod 0755 /var/run/shinra 2>/dev/null || true
 chmod 0755 /etc/init.d/shinra 2>/dev/null || true
 chmod 0755 /usr/libexec/shinra-ensure-auto-task 2>/dev/null || true
 chmod 0755 /usr/libexec/shinra-auto-task 2>/dev/null || true
+chmod 0755 /usr/libexec/shinra-runner 2>/dev/null || true
 chmod 0755 /usr/libexec/shinra-ruleset-sync-job 2>/dev/null || true
+
+if [ -d /www/shinra ]; then
+	chmod 0755 /www/shinra 2>/dev/null || true
+fi
+
+if [ -d /www/shinra/zashboard ]; then
+	find /www/shinra/zashboard -type d -exec chmod 0755 {} \; 2>/dev/null || true
+	find /www/shinra/zashboard -type f -exec chmod 0644 {} \; 2>/dev/null || true
+fi
 
 copy_default() {
 	local src="$1"

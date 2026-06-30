@@ -7,9 +7,12 @@
 import { PATH, BIN } from 'shinra.core.constants';
 import { Success, Fail } from 'shinra.core.result';
 import { ERR } from 'shinra.core.error';
-import { acquire, release } from 'shinra.core.lock';
-import { read_text, write_text_atomic, write_runtime_text_atomic, parse_json_object, file_exists, ensure_config_dir, ExecResult } from 'shinra.core.utils';
-import { observe_runtime } from 'shinra.runtime';
+import { lock_acquire, lock_release } from 'shinra.core.lock';
+import { write_runtime_text_atomic, file_exists, ExecResult, json_stringify } from 'shinra.core.utils';
+import { artifact_check_config, artifact_commit_runtime, artifact_restore_runtime, artifact_swap_runtime_backup } from 'shinra.core.artifact';
+import { observe_runtime, runtime_restart_owned } from 'shinra.runtime';
+import { runtime_ownership_guard } from 'shinra.core.runtime_ownership';
+import { ruleset_transaction_confirm, ruleset_transaction_restore } from 'shinra.core.ruleset_artifact';
 
 function write_last_error(detail) {
 	write_runtime_text_atomic(PATH.LAST_ERROR, "" + detail);
@@ -17,12 +20,6 @@ function write_last_error(detail) {
 
 function write_last_apply_result(detail) {
 	write_runtime_text_atomic(PATH.LAST_APPLY_RESULT, "" + detail);
-}
-
-function check_config_file(trace_id, path) {
-	let result = ExecResult(trace_id, [ BIN.SING_BOX, "check", "-c", path ]);
-	if (result.code != 0)
-		die(result.stderr || result.stdout);
 }
 
 function runtime_observation_ready(observed) {
@@ -51,26 +48,39 @@ function wait_runtime_ready(trace_id) {
 }
 
 function restart_runtime(trace_id) {
-	let result = ExecResult(trace_id, [ BIN.INIT, "restart" ]);
-	if (result.code != 0)
-		die(result.stderr || result.stdout);
-
-	let observed = wait_runtime_ready(trace_id);
-	if (!observed.running)
-		die("Runtime restart did not create a running instance: " + observed.state);
-
-	return observed;
+	return runtime_restart_owned(trace_id);
 }
 
 function restore_backup(trace_id) {
-	if (!file_exists(PATH.RUNTIME_CONFIG_BAK))
+	let restored = artifact_restore_runtime(trace_id, PATH.RUNTIME_CONFIG, PATH.RUNTIME_CONFIG_BAK).restored == true;
+	if (!restored)
 		return false;
-
-	let backup = read_text(PATH.RUNTIME_CONFIG_BAK);
-	parse_json_object(backup, "Runtime Config Backup");
-	write_text_atomic(PATH.RUNTIME_CONFIG, backup);
 	restart_runtime(trace_id);
 	return true;
+}
+
+function restore_pending_rulesets(trace_id) {
+	try {
+		return ruleset_transaction_restore(trace_id);
+	} catch (e) {
+		return {
+			pending: true,
+			failed_count: 1,
+			error: "" + e
+		};
+	}
+}
+
+function confirm_pending_rulesets(trace_id) {
+	try {
+		return ruleset_transaction_confirm(trace_id);
+	} catch (e) {
+		return {
+			pending: true,
+			failed_count: 1,
+			error: "" + e
+		};
+	}
 }
 
 function config_apply(trace_id, req) {
@@ -80,25 +90,34 @@ function config_apply(trace_id, req) {
 		if (!file_exists(PATH.CANDIDATE_CONFIG))
 			return Fail(ERR.E_CANDIDATE_NOT_FOUND, "Candidate config not found", trace_id, PATH.CANDIDATE_CONFIG);
 
-		let candidate = read_text(PATH.CANDIDATE_CONFIG);
-		parse_json_object(candidate, "Candidate Config");
-		check_config_file(trace_id, PATH.CANDIDATE_CONFIG);
+		let check = artifact_check_config(trace_id, PATH.CANDIDATE_CONFIG);
+		if (!check.ok)
+			die(check.error);
 
-		lock = acquire(trace_id);
-		ensure_config_dir();
-
-		if (file_exists(PATH.RUNTIME_CONFIG)) {
-			let current = read_text(PATH.RUNTIME_CONFIG);
-			parse_json_object(current, "Runtime Config");
-			write_text_atomic(PATH.RUNTIME_CONFIG_BAK, current);
-			backup_created = true;
+		let guard = null;
+		try {
+			guard = runtime_ownership_guard(trace_id);
+		} catch (ownership_error) {
+			let err = "" + ownership_error;
+			write_last_error(err);
+			write_last_apply_result("apply_failed");
+			return Fail(ERR.E_RUNTIME_OWNERSHIP_CHECK_FAILED, "Failed to check Runtime ownership", trace_id, err);
+		}
+		if (!guard.ok) {
+			write_last_error(guard.detail);
+			write_last_apply_result("apply_failed");
+			return Fail(ERR.E_RUNTIME_FOREIGN_PROCESS, "Foreign sing-box runtime detected", trace_id, guard.detail);
 		}
 
-		write_text_atomic(PATH.RUNTIME_CONFIG, candidate);
+		lock = lock_acquire("runtime", trace_id);
+		let committed = artifact_commit_runtime(trace_id, PATH.CANDIDATE_CONFIG, PATH.RUNTIME_CONFIG, PATH.RUNTIME_CONFIG_BAK);
+		backup_created = committed.backup_created == true;
+
 		write_last_error("");
 		write_last_apply_result("apply_ok");
 		let observed = restart_runtime(trace_id);
-		release(lock);
+		let ruleset_transaction = confirm_pending_rulesets(trace_id);
+		lock_release(lock);
 
 		return Success({
 			path: PATH.RUNTIME_CONFIG,
@@ -106,28 +125,37 @@ function config_apply(trace_id, req) {
 			backup_created: backup_created,
 			health_ready: observed.health_ready,
 			health_wait_attempts: observed.health_wait_attempts,
+			stop_wait: observed.stop_wait || {},
+			cleanup: observed.cleanup || {},
+			ruleset_transaction: ruleset_transaction,
 			state: json(observed.state)
 		}, 200, trace_id, "Runtime config applied");
 	} catch (e) {
 		if (lock != null) {
 			let err = "" + e;
 			let rolled_back = false;
+			let ruleset_rollback = restore_pending_rulesets(trace_id);
 			try {
 				if (backup_created)
 					rolled_back = restore_backup(trace_id);
 			} catch (rollback_error) {
 				err = err + "; rollback failed: " + ("" + rollback_error);
 			}
+			if (ruleset_rollback.failed_count > 0)
+				err = err + "; ruleset rollback failed: " + (ruleset_rollback.error || json_stringify(ruleset_rollback));
 			write_last_error(err);
 			write_last_apply_result("apply_failed");
-			release(lock);
-			return Fail(ERR.E_RUNTIME_APPLY_FAILED, "Failed to apply Runtime config", trace_id, err + "; rolled_back=" + rolled_back);
+			lock_release(lock);
+			return Fail(ERR.E_RUNTIME_APPLY_FAILED, "Failed to apply Runtime config", trace_id, err + "; rolled_back=" + rolled_back + "; ruleset_rollback=" + json_stringify(ruleset_rollback));
 		}
 
 		let err = "" + e;
+		let ruleset_rollback = restore_pending_rulesets(trace_id);
+		if (ruleset_rollback.failed_count > 0)
+			err = err + "; ruleset rollback failed: " + (ruleset_rollback.error || json_stringify(ruleset_rollback));
 		write_last_error(err);
 		write_last_apply_result("apply_failed");
-		return Fail(ERR.E_RUNTIME_APPLY_FAILED, "Failed to apply Runtime config", trace_id, err);
+		return Fail(ERR.E_RUNTIME_APPLY_FAILED, "Failed to apply Runtime config", trace_id, err + "; ruleset_rollback=" + json_stringify(ruleset_rollback));
 	}
 }
 
@@ -137,34 +165,30 @@ function config_rollback(trace_id, req) {
 		if (!file_exists(PATH.RUNTIME_CONFIG_BAK))
 			return Fail(ERR.E_RUNTIME_CONFIG_NOT_FOUND, "Runtime backup config not found", trace_id, PATH.RUNTIME_CONFIG_BAK);
 
-		let backup = read_text(PATH.RUNTIME_CONFIG_BAK);
-		parse_json_object(backup, "Runtime Config Backup");
-		check_config_file(trace_id, PATH.RUNTIME_CONFIG_BAK);
+		let check = artifact_check_config(trace_id, PATH.RUNTIME_CONFIG_BAK);
+		if (!check.ok)
+			return Fail(ERR.E_RUNTIME_ROLLBACK_FAILED, "Failed to roll back Runtime config", trace_id, check.error);
 
-		lock = acquire(trace_id);
-		let current = "";
-		if (file_exists(PATH.RUNTIME_CONFIG))
-			current = read_text(PATH.RUNTIME_CONFIG);
-
-		write_text_atomic(PATH.RUNTIME_CONFIG, backup);
-		if (current != "")
-			write_text_atomic(PATH.RUNTIME_CONFIG_BAK, current);
+		lock = lock_acquire("runtime", trace_id);
+		artifact_swap_runtime_backup(trace_id, PATH.RUNTIME_CONFIG, PATH.RUNTIME_CONFIG_BAK);
 
 		write_last_error("");
 		write_last_apply_result("rollback_ok");
 		let observed = restart_runtime(trace_id);
-		release(lock);
+		lock_release(lock);
 
 		return Success({
 			path: PATH.RUNTIME_CONFIG,
 			backup: PATH.RUNTIME_CONFIG_BAK,
 			health_ready: observed.health_ready,
 			health_wait_attempts: observed.health_wait_attempts,
+			stop_wait: observed.stop_wait || {},
+			cleanup: observed.cleanup || {},
 			state: json(observed.state)
 		}, 200, trace_id, "Runtime config rolled back");
 	} catch (e) {
 		if (lock != null)
-			release(lock);
+			lock_release(lock);
 		let err = "" + e;
 		write_last_error(err);
 		write_last_apply_result("rollback_failed");
