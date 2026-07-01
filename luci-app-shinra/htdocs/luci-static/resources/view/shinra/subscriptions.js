@@ -261,6 +261,29 @@ function matrixId(index, field, region) {
 	return 'shinra-matrix-' + index + '-' + field + (region ? '-' + region : '');
 }
 
+function sectionStyle() {
+	return 'border: 1px solid #dfe3e8; border-radius: 8px; padding: .75rem 1rem; margin: 0 0 .75rem; background: #fff;';
+}
+
+function mutedStyle() {
+	return 'color: #667; line-height: 1.35; overflow-wrap: anywhere;';
+}
+
+function pageHeader(title, description) {
+	return E('div', { 'style': sectionStyle() }, [
+		E('h2', { 'style': 'margin: 0 0 .35rem; line-height: 1.25;' }, title),
+		E('p', { 'style': mutedStyle() + ' margin: 0;' }, description)
+	]);
+}
+
+function sectionTitle(title) {
+	return E('h3', { 'style': 'margin: 0 0 .45rem; line-height: 1.25;' }, title);
+}
+
+function sectionDescription(text) {
+	return E('div', { 'style': mutedStyle() + ' margin: 0 0 .6rem;' }, text);
+}
+
 function field(label, value) {
 	return E('div', { 'style': 'display: grid; grid-template-columns: minmax(130px, .8fr) minmax(0, 2fr); gap: .75rem; padding: .45rem 0; border-bottom: 1px solid #eef0f3;' }, [
 		E('div', { 'style': 'color: #667;' }, label),
@@ -273,9 +296,9 @@ function sourceMatrix(policy, summary) {
 	let status = sourceStatusMap(summary);
 	let sources = policy.sources || [];
 
-	return E('div', { 'style': 'border: 1px solid #ddd; border-radius: 8px; padding: 1rem; background: #fff; margin-bottom: 1rem;' }, [
-		E('div', { 'style': 'display: flex; justify-content: space-between; align-items: center; gap: .75rem; margin-bottom: .75rem;' }, [
-			E('h3', { 'style': 'margin: 0;' }, _('订阅源区域矩阵')),
+	return E('div', { 'style': sectionStyle() }, [
+		E('div', { 'style': 'display: flex; justify-content: space-between; align-items: center; gap: .75rem; margin-bottom: .6rem;' }, [
+			E('h3', { 'style': 'margin: 0; line-height: 1.25;' }, _('订阅源区域矩阵')),
 			E('button', {
 				'class': 'btn cbi-button',
 				'click': function(ev) {
@@ -362,8 +385,8 @@ function policySettings(policy) {
 	let keys = regionKeys(policy);
 
 	return E('div', { 'style': 'display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; margin-top: .75rem;' }, [
-		E('div', { 'style': 'border: 1px solid #ddd; border-radius: 8px; padding: 1rem; background: #fff;' }, [
-			E('h3', {}, _('区域关键字')),
+		E('div', { 'style': sectionStyle() }, [
+			sectionTitle(_('区域关键字')),
 			E('div', {}, keys.map(function(region) {
 				return field(region, E('input', {
 					'id': 'shinra-region-keywords-' + region,
@@ -373,8 +396,8 @@ function policySettings(policy) {
 				}));
 			}))
 		]),
-		E('div', { 'style': 'border: 1px solid #ddd; border-radius: 8px; padding: 1rem; background: #fff;' }, [
-			E('h3', {}, _('清洗与 URLTest')),
+		E('div', { 'style': sectionStyle() }, [
+			sectionTitle(_('清洗与 URLTest')),
 			field(_('过滤关键字'), E('textarea', {
 				'id': 'shinra-banned-keywords',
 				'class': 'cbi-input-textarea',
@@ -408,8 +431,8 @@ function fetchSafetySettings(policy) {
 	let bypass = normalizeFetchBypass(policy.fetch_bypass);
 
 	return E('div', { 'style': 'display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; margin-top: .75rem;' }, [
-		E('div', { 'style': 'border: 1px solid #ddd; border-radius: 8px; padding: 1rem; background: #fff;' }, [
-			E('h3', {}, _('局域网绕行')),
+		E('div', { 'style': sectionStyle() }, [
+			sectionTitle(_('局域网绕行')),
 			field(_('启用'), E('input', {
 				'id': 'shinra-fetch-bypass-enabled',
 				'type': 'checkbox',
@@ -443,9 +466,9 @@ function fetchSafetySettings(policy) {
 				'value': bypass.priority || DEFAULT_FETCH_BYPASS.priority
 			}))
 		]),
-		E('div', { 'style': 'border: 1px solid #ddd; border-radius: 8px; padding: 1rem; background: #fff;' }, [
-			E('h3', {}, _('允许的主机')),
-			E('p', { 'style': 'color: #667; margin-top: 0;' }, _('只有明确配置的局域网 IPv4 主机才会使用临时抓取绕行。每行一个主机，也可以用逗号分隔。')),
+		E('div', { 'style': sectionStyle() }, [
+			sectionTitle(_('允许的主机')),
+			sectionDescription(_('只有明确配置的局域网 IPv4 主机才会使用临时抓取绕行。每行一个主机，也可以用逗号分隔。')),
 			E('textarea', {
 				'id': 'shinra-fetch-bypass-hosts',
 				'class': 'cbi-input-textarea',
@@ -460,7 +483,7 @@ function fetchSafetySettings(policy) {
 function collapsible(title, subtitle, content, open) {
 	return E('details', {
 		'open': open ? 'open' : null,
-		'style': 'border: 1px solid #ddd; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; background: #fff;'
+		'style': sectionStyle()
 	}, [
 		E('summary', { 'style': 'cursor: pointer; list-style-position: inside;' }, [
 			E('span', { 'style': 'font-weight: 700;' }, title),
@@ -497,8 +520,8 @@ function subscriptionUpdateSettings(policy) {
 	let update = normalizeSubscriptionUpdate(policy.subscription_update);
 
 	return E('div', { 'style': 'display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; margin-top: .75rem;' }, [
-		E('div', { 'style': 'border: 1px solid #ddd; border-radius: 8px; padding: 1rem; background: #fff;' }, [
-			E('h3', {}, _('调度策略')),
+		E('div', { 'style': sectionStyle() }, [
+			sectionTitle(_('调度策略')),
 			field(_('自动刷新'), E('input', {
 				'id': 'shinra-subscription-auto-update',
 				'type': 'checkbox',
@@ -524,9 +547,9 @@ function subscriptionUpdateSettings(policy) {
 				'checked': update.run_on_boot ? 'checked' : null
 			}))
 		]),
-		E('div', { 'style': 'border: 1px solid #ddd; border-radius: 8px; padding: 1rem; background: #fff;' }, [
-			E('h3', {}, _('边界')),
-			E('p', { 'style': 'color: #667; margin-top: 0;' }, _('这里只保存自动刷新策略。调度器会按该策略触发自动任务。')),
+		E('div', { 'style': sectionStyle() }, [
+			sectionTitle(_('边界')),
+			sectionDescription(_('这里只保存自动刷新策略。调度器会按该策略触发自动任务。')),
 			E('div', { 'style': 'color: #667; font-size: 12px; line-height: 1.6;' }, [
 				_('调度目标：subscription.refresh。'),
 				E('br'),
@@ -668,8 +691,8 @@ function nodeTabs(summary) {
 	}));
 	let nodes = nodesForSource(summary, active);
 
-	return E('div', { 'style': 'border: 1px solid #ddd; border-radius: 8px; padding: 1rem; background: #fff;' }, [
-		E('h3', {}, _('节点摘要')),
+	return E('div', { 'style': sectionStyle() }, [
+		sectionTitle(_('节点摘要')),
 		E('div', { 'style': 'display: flex; gap: .45rem; flex-wrap: wrap; margin-bottom: .85rem;' }, tabs.map(function(tab) {
 			let selected = tab.name === active;
 			return E('button', {
@@ -692,14 +715,14 @@ function nodeTabs(summary) {
 
 function snapshotSummary(summary) {
 	return E('div', { 'id': 'shinra-node-snapshot-summary' }, [
-		E('div', { 'style': 'display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .75rem; margin-bottom: 1rem;' }, [
+		E('div', { 'style': 'display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .75rem; margin-bottom: .75rem;' }, [
 			field(_('节点'), '%d'.format(summary && summary.node_count || 0)),
 			field(_('订阅源'), '%d'.format(summary && summary.source_count || 0)),
 			field(_('策略'), summary && summary.refresh_strategy || 'direct'),
 			field(_('更新时间'), summary && summary.updated_at || '-')
 		]),
-		E('div', { 'style': 'border: 1px solid #ddd; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; background: #fff;' }, [
-			E('h3', {}, _('订阅源摘要')),
+		E('div', { 'style': sectionStyle() }, [
+			sectionTitle(_('订阅源摘要')),
 			E('div', { 'style': 'display: grid; grid-template-columns: minmax(0, 1.4fr) 80px 90px minmax(0, 1fr); gap: .75rem; color: #667; font-size: 12px; padding-bottom: .4rem; border-bottom: 1px solid #ddd;' }, [
 				E('div', {}, _('名称')),
 				E('div', {}, _('状态')),
@@ -873,11 +896,10 @@ return view.extend({
 		setDraft(policy);
 
 		return E('div', { 'class': 'cbi-map' }, [
-			E('div', { 'class': 'cbi-section' }, [
-				E('h3', {}, _('订阅')),
-				E('p', { 'style': 'color: #667; max-width: 820px;' }, _('管理 Sub-Store 输出订阅源、区域授权、清洗策略和 URLTest 参数。刷新只写入节点快照。')),
-				E('div', { 'id': 'shinra-subscriptions-status', 'style': 'display: none; border: 1px solid #ddd; border-radius: 8px; padding: .75rem; margin-bottom: 1rem;' }),
-				E('div', { 'style': 'display: flex; justify-content: flex-end; gap: .5rem; flex-wrap: wrap; margin-bottom: 1rem;' }, [
+			E('div', {}, [
+				pageHeader(_('订阅'), _('管理 Sub-Store 输出订阅源、区域授权、清洗策略和 URLTest 参数。刷新只写入节点快照。')),
+				E('div', { 'id': 'shinra-subscriptions-status', 'style': 'display: none; border: 1px solid #ddd; border-radius: 8px; padding: .65rem; margin: 0 0 .75rem;' }),
+				E('div', { 'style': 'display: flex; justify-content: flex-end; gap: .5rem; flex-wrap: wrap; margin: 0 0 .75rem;' }, [
 					E('select', { 'id': 'shinra-refresh-strategy', 'class': 'cbi-input-select' }, [
 						E('option', { 'value': 'direct', 'selected': policy.refresh_strategy === 'direct' ? 'selected' : null }, _('直连刷新')),
 						E('option', { 'value': 'proxy', 'selected': policy.refresh_strategy === 'proxy' ? 'selected' : null }, _('代理刷新'))

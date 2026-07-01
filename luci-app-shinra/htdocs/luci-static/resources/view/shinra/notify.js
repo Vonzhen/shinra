@@ -65,7 +65,22 @@ function notifySettings() {
 }
 
 function sectionStyle() {
-	return 'border: 1px solid #dfe3e8; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; background: #fff;';
+	return 'border: 1px solid #dfe3e8; border-radius: 8px; padding: .75rem 1rem; margin: 0 0 .75rem; background: #fff;';
+}
+
+function mutedStyle() {
+	return 'color: #667; line-height: 1.35; overflow-wrap: anywhere;';
+}
+
+function pageHeader(title, description) {
+	return E('div', { 'style': sectionStyle() }, [
+		E('h2', { 'style': 'margin: 0 0 .35rem; line-height: 1.25;' }, title),
+		E('p', { 'style': mutedStyle() + ' margin: 0;' }, description)
+	]);
+}
+
+function sectionTitle(title) {
+	return E('h3', { 'style': 'margin: 0 0 .45rem; line-height: 1.25;' }, title);
 }
 
 function field(label, input, help) {
@@ -143,13 +158,12 @@ function renderPage() {
 	const tg = settings.telegram;
 
 	return E('div', { 'id': 'shinra-notify-root', 'class': 'cbi-map' }, [
-		E('h2', {}, _('\u901a\u77e5')),
-		E('p', {}, _('Telegram \u901a\u77e5\u4ec5\u7528\u4e8e\u65e0\u4eba\u503c\u5b88\u7684\u81ea\u52a8\u8d44\u6e90\u66f4\u65b0\uff0c\u4f8b\u5982\u8ba2\u9605\u5237\u65b0\u548c\u89c4\u5219\u96c6\u540c\u6b65\u5931\u8d25\u3002\u624b\u5de5\u64cd\u4f5c\u4e0d\u4f1a\u53d1\u9001\u901a\u77e5\u3002')),
+		pageHeader(_('\u901a\u77e5'), _('Telegram \u901a\u77e5\u4ec5\u7528\u4e8e\u65e0\u4eba\u503c\u5b88\u7684\u81ea\u52a8\u8d44\u6e90\u66f4\u65b0\uff0c\u4f8b\u5982\u8ba2\u9605\u5237\u65b0\u548c\u89c4\u5219\u96c6\u540c\u6b65\u5931\u8d25\u3002\u624b\u5de5\u64cd\u4f5c\u4e0d\u4f1a\u53d1\u9001\u901a\u77e5\u3002')),
 		E('div', { 'style': sectionStyle() }, [
-			E('h3', { 'style': 'margin-top: 0;' }, _('Telegram')),
+			sectionTitle(_('Telegram')),
 			E('div', {
 				'id': 'shinra-notify-status',
-				'style': 'display: %s; border: 1px solid %s; border-radius: 8px; padding: .75rem; margin-bottom: 1rem; background: %s; color: %s;'.format(
+				'style': 'display: %s; border: 1px solid %s; border-radius: 8px; padding: .65rem; margin-bottom: .75rem; background: %s; color: %s;'.format(
 					actionStatus ? 'block' : 'none',
 					actionStatusOk ? '#bbf7d0' : '#fecaca',
 					actionStatusOk ? '#f0fdf4' : '#fef2f2',

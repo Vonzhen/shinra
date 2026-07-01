@@ -36,11 +36,26 @@ function dataOf(result) {
 }
 
 function mutedStyle() {
-	return 'color: #667; overflow-wrap: anywhere;';
+	return 'color: #667; line-height: 1.35; overflow-wrap: anywhere;';
 }
 
 function sectionStyle() {
-	return 'border: 1px solid #dfe3e8; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; background: #fff;';
+	return 'border: 1px solid #dfe3e8; border-radius: 8px; padding: .75rem 1rem; margin: 0 0 .75rem; background: #fff;';
+}
+
+function pageHeader(title, description) {
+	return E('div', { 'style': sectionStyle() }, [
+		E('h2', { 'style': 'margin: 0 0 .35rem; line-height: 1.25;' }, title),
+		E('p', { 'style': mutedStyle() + ' margin: 0;' }, description)
+	]);
+}
+
+function sectionTitle(title) {
+	return E('h3', { 'style': 'margin: 0 0 .45rem; line-height: 1.25;' }, title);
+}
+
+function sectionDescription(text) {
+	return E('div', { 'style': mutedStyle() + ' margin: 0 0 .6rem;' }, text);
 }
 
 function valueText(value) {
@@ -183,8 +198,8 @@ function dataplanePanel() {
 
 	return E('div', {}, [
 		E('div', { 'style': sectionStyle() }, [
-			E('h3', { 'style': 'margin-top: 0;' }, _('数据面观测')),
-			E('div', { 'style': mutedStyle() + ' margin-bottom: .85rem;' }, _('用于排查 TUN、auto_redirect、策略表、Clash API 和策略组可观测性。')),
+			sectionTitle(_('数据面观测')),
+			sectionDescription(_('用于排查 TUN、auto_redirect、策略表、Clash API 和策略组可观测性。')),
 			checkRow(_('数据面就绪'), ready, ready ? _('ready') : (readiness.failed_check || '-')),
 			checkRow(_('Runtime 运行中'), !!checks.runtime_running, runtime.service_status || '-'),
 			checkRow(_('TUN 存在'), !!checks.tun_present, runtime.tun_name || readiness.tun_name || 'tun0'),
@@ -194,10 +209,10 @@ function dataplanePanel() {
 			checkRow(_('auto_redirect 规则可观测'), !!checks.ip_rule_has_fwmark_redirect, checks.auto_redirect_mode ? _('auto_redirect mode') : '-'),
 			checkRow(_('Clash API 可访问'), !!checks.clash_api_available, checks.clash_api_available ? _('ok') : _('api_unreachable')),
 			checkRow(_('策略组可观测'), !!checks.selector_available, selectors.first_now || selectors.error || '-'),
-			checkRow(_('本机 route get 经 TUN'), !!routeDiagnostic, _('auto_redirect 模式下仅作诊断，不参与就绪判定'), true)
+			checkRow(_('本机 route get 经 TUN'), !!routeDiagnostic, _('auto_redirect 模式下仅作诊断，不参与就绪判断'), true)
 		]),
 		E('div', { 'style': sectionStyle() }, [
-			E('h3', { 'style': 'margin-top: 0;' }, _('数据面命令输出')),
+			sectionTitle(_('数据面命令输出')),
 			commandBlock('ip link show ' + (runtime.tun_name || readiness.tun_name || 'tun0'), commands.tun_link),
 			commandBlock('ip rule', commands.ip_rule),
 			commandBlock('ip route show table 2022', commands.table_2022),
@@ -205,7 +220,7 @@ function dataplanePanel() {
 			commandBlock('ip route get ' + (probe.probe_target || '1.1.1.1'), commands.route_target)
 		]),
 		E('div', { 'style': sectionStyle() }, [
-			E('h3', { 'style': 'margin-top: 0;' }, _('数据面日志')),
+			sectionTitle(_('数据面日志')),
 			E('pre', { 'style': 'white-space: pre-wrap; overflow-wrap: anywhere; max-height: 420px; overflow-y: auto;' }, logsText(logs.lines, dataplaneLogs))
 		])
 	]);
@@ -267,7 +282,7 @@ function controlplanePanel() {
 
 	return E('div', {}, [
 		E('div', { 'style': sectionStyle() }, [
-			E('h3', { 'style': 'margin-top: 0;' }, _('控制面状态')),
+			sectionTitle(_('控制面状态')),
 			field(_('服务状态'), service.stdout || runtime.service_status || '-'),
 			field(_('服务状态码'), service.code),
 			field(_('Runtime 配置'), runtime.runtime_config_path || '-'),
@@ -276,7 +291,7 @@ function controlplanePanel() {
 			field(_('检查时间'), runtime.checked_at || '-')
 		]),
 		E('div', { 'style': sectionStyle() }, [
-			E('h3', { 'style': 'margin-top: 0;' }, _('控制面文件')),
+			sectionTitle(_('控制面文件')),
 			E('div', { 'style': 'display: grid; grid-template-columns: minmax(130px, .8fr) minmax(0, 2fr) 90px; gap: .75rem; color: #667; font-size: 12px; padding-bottom: .4rem; border-bottom: 1px solid #dfe3e8;' }, [
 				E('div', {}, _('名称')),
 				E('div', {}, _('路径')),
@@ -285,18 +300,18 @@ function controlplanePanel() {
 			E('div', {}, fileRows(files))
 		]),
 		E('div', { 'style': sectionStyle() }, [
-			E('h3', { 'style': 'margin-top: 0;' }, _('最近错误')),
+			sectionTitle(_('最近错误')),
 			E('pre', { 'style': 'white-space: pre-wrap; overflow-wrap: anywhere; min-height: 2.5rem;' }, lastError.content || runtime.recent_error || _('无'))
 		]),
 		E('div', { 'style': sectionStyle() }, [
-			E('h3', { 'style': 'margin-top: 0;' }, _('验收命令')),
+			sectionTitle(_('验收命令')),
 			E('textarea', {
 				'readonly': 'readonly',
 				'style': 'width: 100%; min-height: 180px; box-sizing: border-box; font-family: monospace; white-space: pre;'
 			}, commandText())
 		]),
 		E('div', { 'style': sectionStyle() }, [
-			E('h3', { 'style': 'margin-top: 0;' }, _('控制面日志')),
+			sectionTitle(_('控制面日志')),
 			E('pre', { 'style': 'white-space: pre-wrap; overflow-wrap: anywhere; max-height: 420px; overflow-y: auto;' }, logsText(logs.lines, controlplaneLogs))
 		])
 	]);
@@ -305,9 +320,8 @@ function controlplanePanel() {
 function renderPage() {
 	const errorPanel = loadErrorPanel();
 	const children = [
-		E('h2', {}, _('网络诊断')),
-		E('div', { 'style': mutedStyle() + ' margin-bottom: 1rem;' }, _('用于排查控制面任务和数据面接管。高层摘要集中在概览页。')),
-		E('div', {}, [
+		pageHeader(_('网络诊断'), _('用于排查控制面任务和数据面接管。高层摘要集中在概览页。')),
+		E('div', { 'style': 'display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; margin: 0 0 .75rem;' }, [
 			tabButton('dataplane', _('数据面')),
 			tabButton('controlplane', _('控制面'))
 		])
@@ -319,7 +333,7 @@ function renderPage() {
 	children.push(activeTab === 'dataplane' ? dataplanePanel() : controlplanePanel());
 
 	return E('div', { 'id': 'shinra-diagnostics-root', 'class': 'cbi-map' }, [
-		E('div', { 'class': 'cbi-section' }, children)
+		E('div', {}, children)
 	]);
 }
 
@@ -355,3 +369,5 @@ return view.extend({
 	handleSave: null,
 	handleReset: null
 });
+
+

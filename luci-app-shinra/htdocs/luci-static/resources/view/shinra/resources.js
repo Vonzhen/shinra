@@ -12,6 +12,17 @@ const tabs = [
 	{ id: 'notify', label: _('\u901a\u77e5'), module: 'view.shinra.notify' }
 ];
 
+function sectionStyle() {
+	return 'border: 1px solid #dfe3e8; border-radius: 8px; padding: .75rem 1rem; margin: 0 0 .75rem; background: #fff;';
+}
+
+function pageHeader(title, description) {
+	return E('div', { 'style': sectionStyle() }, [
+		E('h2', { 'style': 'margin: 0 0 .35rem; line-height: 1.25;' }, title),
+		E('p', { 'style': 'margin: 0; color: #667; line-height: 1.35; overflow-wrap: anywhere;' }, description)
+	]);
+}
+
 function tabById(id) {
 	for (let i = 0; i < tabs.length; i++) {
 		if (tabs[i].id === id)
@@ -68,7 +79,7 @@ function tabButton(tab) {
 
 function tabBar() {
 	return E('div', {
-		'style': 'display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; margin: 1rem 0;'
+		'style': 'display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; margin: 0 0 .75rem;'
 	}, tabs.map(tabButton));
 }
 
@@ -78,16 +89,16 @@ function renderActiveTab() {
 	const data = loaded[tab.id];
 
 	if (data && data.error) {
-		return E('div', { 'class': 'cbi-section' }, [
-			E('h3', {}, tab.label),
-			E('p', { 'style': 'color: #b91c1c;' }, data.error)
+		return E('div', { 'style': sectionStyle() }, [
+			E('h3', { 'style': 'margin: 0 0 .45rem; line-height: 1.25;' }, tab.label),
+			E('p', { 'style': 'margin: 0; color: #b91c1c; line-height: 1.35; overflow-wrap: anywhere;' }, data.error)
 		]);
 	}
 
 	if (!mod || typeof mod.render !== 'function') {
-		return E('div', { 'class': 'cbi-section' }, [
-			E('h3', {}, tab.label),
-			E('p', {}, _('\u8be5\u8d44\u6e90\u9875\u6682\u4e0d\u53ef\u7528\u3002'))
+		return E('div', { 'style': sectionStyle() }, [
+			E('h3', { 'style': 'margin: 0 0 .45rem; line-height: 1.25;' }, tab.label),
+			E('p', { 'style': 'margin: 0; color: #667; line-height: 1.35;' }, _('\u8be5\u8d44\u6e90\u9875\u6682\u4e0d\u53ef\u7528\u3002'))
 		]);
 	}
 
@@ -98,8 +109,10 @@ function renderActiveTab() {
 
 function renderPage() {
 	return E('div', { 'id': 'shinra-resources-root', 'class': 'cbi-map' }, [
-		E('h2', {}, _('\u8d44\u6e90\u7ba1\u7406')),
-		E('p', {}, _('\u7ba1\u7406\u6a21\u677f\u3001\u8ba2\u9605\u6e90\u3001\u89c4\u5219\u96c6\u548c\u81ea\u52a8\u4efb\u52a1\u901a\u77e5\u3002\u4fdd\u5b58\u53ea\u5199\u5165\u8bbe\u7f6e\uff1b\u5237\u65b0\u3001\u540c\u6b65\u548c\u66f4\u65b0\u53ef\u80fd\u4f5c\u4e3a\u540e\u53f0\u4efb\u52a1\u8fd0\u884c\u3002')),
+		pageHeader(
+			_('\u8d44\u6e90\u7ba1\u7406'),
+			_('\u7ba1\u7406\u6a21\u677f\u3001\u8ba2\u9605\u6e90\u3001\u89c4\u5219\u96c6\u548c\u81ea\u52a8\u4efb\u52a1\u901a\u77e5\u3002\u4fdd\u5b58\u53ea\u5199\u5165\u8bbe\u7f6e\uff1b\u5237\u65b0\u3001\u540c\u6b65\u548c\u66f4\u65b0\u53ef\u80fd\u4f5c\u4e3a\u540e\u53f0\u4efb\u52a1\u8fd0\u884c\u3002')
+		),
 		tabBar(),
 		renderActiveTab()
 	]);
