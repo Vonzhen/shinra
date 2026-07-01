@@ -149,7 +149,30 @@ function bytesText(value) {
 }
 
 function sectionStyle() {
-	return 'border: 1px solid #dfe3e8; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; background: #fff;';
+	return 'border: 1px solid #dfe3e8; border-radius: 8px; padding: .75rem 1rem; margin: 0 0 .75rem; background: #fff;';
+}
+
+function mutedStyle() {
+	return 'color: #667; line-height: 1.35; overflow-wrap: anywhere;';
+}
+
+function pageHeader(title, description) {
+	return E('div', { 'style': sectionStyle() }, [
+		E('h2', { 'style': 'margin: 0 0 .35rem; line-height: 1.25;' }, title),
+		E('p', { 'style': mutedStyle() + ' margin: 0;' }, description)
+	]);
+}
+
+function sectionTitle(title) {
+	return E('h3', { 'style': 'margin: 0 0 .45rem; line-height: 1.25;' }, title);
+}
+
+function sectionDescription(text) {
+	return E('div', { 'style': mutedStyle() + ' margin: 0 0 .6rem;' }, text);
+}
+
+function fieldLabel(text) {
+	return E('div', { 'style': 'font-size: 12px; color: #667; font-weight: 700; margin: 0 0 .25rem; line-height: 1.25;' }, text);
 }
 
 function statusPill(text, level) {
@@ -294,10 +317,10 @@ function modeHelpText() {
 
 function modeSettings() {
 	return E('div', { 'style': sectionStyle() }, [
-		E('h3', { 'style': 'margin-top: 0;' }, _('\u6a21\u5f0f\u8bbe\u7f6e')),
+		sectionTitle(_('\u6a21\u5f0f\u8bbe\u7f6e')),
 		E('div', { 'style': 'display: flex; gap: .65rem; align-items: flex-end; flex-wrap: wrap; margin-bottom: .65rem;' }, [
 			E('label', { 'style': 'min-width: 220px;' }, [
-				E('div', { 'style': 'font-size: 12px; color: #667; font-weight: 700; margin-bottom: .25rem;' }, _('\u89c4\u5219\u96c6\u6a21\u5f0f')),
+				fieldLabel(_('\u89c4\u5219\u96c6\u6a21\u5f0f')),
 				E('select', {
 					'id': 'shinra-ruleset-mode',
 					'class': 'cbi-input-select',
@@ -317,7 +340,7 @@ function modeSettings() {
 			E('button', { 'type': 'button', 'class': 'btn cbi-button cbi-button-save', 'click': function(ev) { ev.preventDefault(); return savePolicy(); } }, _('\u4fdd\u5b58\u8bbe\u7f6e')),
 			policy.mode === 'local' ? E('button', { 'type': 'button', 'class': 'btn cbi-button cbi-button-apply', 'click': function(ev) { ev.preventDefault(); return syncRulesets(); } }, _('\u540c\u6b65\u6240\u9700\u89c4\u5219\u96c6')) : ''
 		]),
-		E('div', { 'style': 'color: #667; overflow-wrap: anywhere;' }, modeHelpText()),
+		E('div', { 'style': mutedStyle() }, modeHelpText()),
 		inlineActionStatus()
 	]);
 }
@@ -327,11 +350,11 @@ function localSyncSettings() {
 		return E('div', { 'style': 'display: none;' }, '');
 
 	return E('div', { 'style': sectionStyle() }, [
-		E('h3', { 'style': 'margin-top: 0;' }, _('\u672c\u5730\u540c\u6b65\u8bbe\u7f6e')),
+		sectionTitle(_('\u672c\u5730\u540c\u6b65\u8bbe\u7f6e')),
 		E('h4', { 'style': 'margin: .25rem 0 .65rem;' }, _('\u89c4\u5219\u96c6\u6765\u6e90')),
-		E('div', { 'style': 'display: grid; grid-template-columns: minmax(0, 1fr); gap: .75rem; margin-bottom: 1rem;' }, [
+		E('div', { 'style': 'display: grid; grid-template-columns: minmax(0, 1fr); gap: .6rem; margin-bottom: .75rem;' }, [
 			E('label', {}, [
-				E('div', { 'style': 'font-size: 12px; color: #667; font-weight: 700; margin-bottom: .25rem;' }, _('\u79c1\u6709\u4ed3\u5e93')),
+				fieldLabel(_('\u79c1\u6709\u4ed3\u5e93')),
 				E('input', {
 					'id': 'shinra-ruleset-private-repo',
 					'class': 'cbi-input-text',
@@ -341,7 +364,7 @@ function localSyncSettings() {
 				})
 			]),
 			E('label', {}, [
-				E('div', { 'style': 'font-size: 12px; color: #667; font-weight: 700; margin-bottom: .25rem;' }, _('\u516c\u5171\u4ed3\u5e93')),
+				fieldLabel(_('\u516c\u5171\u4ed3\u5e93')),
 				E('input', {
 					'id': 'shinra-ruleset-public-repo',
 					'class': 'cbi-input-text',
@@ -353,7 +376,7 @@ function localSyncSettings() {
 		E('h4', { 'style': 'margin: .25rem 0 .65rem;' }, _('\u540c\u6b65\u65b9\u5f0f')),
 		E('div', { 'style': 'display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: .6rem; margin-bottom: .65rem; align-items: start;' }, [
 			E('label', {}, [
-				E('div', { 'style': 'font-size: 12px; color: #667; font-weight: 700; margin-bottom: .25rem;' }, _('\u4e0b\u8f7d\u7b56\u7565')),
+				fieldLabel(_('\u4e0b\u8f7d\u7b56\u7565')),
 				E('select', { 'id': 'shinra-ruleset-fetch-strategy', 'class': 'cbi-input-select', 'style': 'width: 100%;' }, [
 					E('option', { 'value': 'direct', 'selected': policy.fetch_strategy === 'direct' ? 'selected' : null }, _('\u76f4\u8fde')),
 					E('option', { 'value': 'proxy', 'selected': policy.fetch_strategy === 'proxy' ? 'selected' : null }, _('\u4ee3\u7406'))
@@ -374,7 +397,7 @@ function localSyncSettings() {
 					E('span', {}, _('\u6bcf\u65e5\u81ea\u52a8\u540c\u6b65'))
 				]),
 				policy.auto_update ? E('label', { 'style': 'min-width: 130px; max-width: 160px;' }, [
-					E('div', { 'style': 'font-size: 12px; color: #667; font-weight: 700; margin-bottom: .2rem;' }, _('\u6bcf\u65e5\u540c\u6b65\u65f6\u95f4')),
+					fieldLabel(_('\u6bcf\u65e5\u540c\u6b65\u65f6\u95f4')),
 					E('input', {
 						'id': 'shinra-ruleset-update-hour',
 						'class': 'cbi-input-text',
@@ -387,7 +410,7 @@ function localSyncSettings() {
 				]) : ''
 			])
 		]),
-		E('div', { 'style': 'color: #667;' }, _('\u4e0b\u8f7d\u987a\u5e8f\uff1a\u79c1\u6709\u4ed3\u5e93\u4f18\u5148\uff0c\u516c\u5171\u4ed3\u5e93\u515c\u5e95\uff0c\u6700\u540e\u4f7f\u7528\u6a21\u677f\u4e2d\u7684\u539f\u59cb\u5730\u5740\u3002'))
+		E('div', { 'style': mutedStyle() }, _('\u4e0b\u8f7d\u987a\u5e8f\uff1a\u79c1\u6709\u4ed3\u5e93\u4f18\u5148\uff0c\u516c\u5171\u4ed3\u5e93\u515c\u5e95\uff0c\u6700\u540e\u4f7f\u7528\u6a21\u677f\u4e2d\u7684\u539f\u59cb\u5730\u5740\u3002'))
 	]);
 }
 
@@ -420,7 +443,7 @@ function artifactStatusPanel() {
 	const lastGoodCount = Number(state.last_good_count || 0);
 
 	return E('div', { 'style': sectionStyle() }, [
-		E('h3', { 'style': 'margin-top: 0;' }, _('本地规则集保护')),
+		sectionTitle(_('本地规则集保护')),
 		E('div', { 'style': 'display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: .65rem;' }, [
 			statBox(_('等待运行验证'), state.pending ? _('是') : _('否')),
 			statBox(_('待验证文件'), changed),
@@ -589,7 +612,7 @@ function rulesetList() {
 		'toggle': function(ev) {
 			rulesetListOpen = !!ev.target.open;
 		},
-		'style': 'border: 1px solid #dfe3e8; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; background: #fff;'
+		'style': sectionStyle()
 	}, [
 		E('summary', { 'style': 'cursor: pointer; list-style-position: inside;' }, [
 			E('span', { 'style': 'font-weight: 700;' }, _('\u89c4\u5219\u96c6\u5217\u8868')),
@@ -791,8 +814,7 @@ function redraw() {
 
 function renderPage() {
 	return E('div', { 'id': 'shinra-rulesets-root' }, [
-		E('h2', {}, '规则集'),
-		E('p', {}, '管理 main-profile.json 所需的规则集模式和本地资源。'),
+		pageHeader('规则集', '管理 main-profile.json 所需的规则集模式和本地资源。'),
 		modeSettings(),
 		localSyncSettings(),
 		rulesetList()

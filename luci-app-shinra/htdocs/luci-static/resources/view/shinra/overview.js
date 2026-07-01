@@ -134,7 +134,26 @@ function valueText(value) {
 }
 
 function sectionStyle() {
-	return 'border: 1px solid #dfe3e8; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; background: #fff;';
+	return 'border: 1px solid #dfe3e8; border-radius: 8px; padding: .75rem 1rem; margin: 0 0 .75rem; background: #fff;';
+}
+
+function mutedStyle() {
+	return 'color: #667; line-height: 1.35; overflow-wrap: anywhere;';
+}
+
+function pageHeader(title, description) {
+	return E('div', { 'style': sectionStyle() }, [
+		E('h2', { 'style': 'margin: 0 0 .35rem; line-height: 1.25;' }, title),
+		E('p', { 'style': mutedStyle() + ' margin: 0;' }, description)
+	]);
+}
+
+function sectionTitle(title) {
+	return E('h3', { 'style': 'margin: 0 0 .45rem; line-height: 1.25;' }, title);
+}
+
+function sectionDescription(text) {
+	return E('div', { 'style': mutedStyle() + ' margin: 0 0 .6rem;' }, text);
 }
 
 function cardStyle(accent) {
@@ -249,7 +268,7 @@ function actionLink(label, path, primary) {
 	return E('a', {
 		'class': 'btn cbi-button %s'.format(primary ? 'cbi-button-apply' : 'cbi-button-neutral'),
 		'href': L.url(path),
-		'style': 'margin-right: .5rem; margin-bottom: .5rem;'
+		'style': 'margin-right: .5rem; margin-bottom: .5rem; color: #fff !important; text-decoration: none;'
 	}, label);
 }
 
@@ -364,7 +383,7 @@ function runtimeCards() {
 	const clash = !!state.clash_api_available;
 	const config = !!state.runtime_config_exists;
 
-	return E('div', { 'style': 'display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: .75rem; margin-bottom: 1rem;' }, [
+	return E('div', { 'style': 'display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: .75rem; margin-bottom: .75rem;' }, [
 		card(_('\u8fd0\u884c\u65f6'), running ? _('\u8fd0\u884c\u4e2d') : _('\u5df2\u505c\u6b62'), running ? _('sing-box \u670d\u52a1\u8fd0\u884c\u4e2d') : _('\u670d\u52a1\u5df2\u505c\u6b62'), statusTone(running)),
 		card(_('TUN'), tun ? _('\u5b58\u5728') : _('\u7f3a\u5931'), state.tun_name || '-', statusTone(tun, running)),
 		card(_('Clash API'), clash ? _('\u53ef\u7528') : _('\u4e0d\u53ef\u7528'), clash ? _('\u672c\u5730 API \u53ef\u89c2\u6d4b') : _('\u672c\u5730 API \u672a\u89c2\u6d4b\u5230'), statusTone(clash, running)),
@@ -421,7 +440,7 @@ function resourceCards() {
 	if (notifyEnabled)
 		notifyAccent = statusTone(notifyState.last_sent == true, !notifyState.last_attempt_at);
 
-	return E('div', { 'style': 'display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: .75rem; margin-bottom: 1rem;' }, [
+	return E('div', { 'style': 'display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: .75rem; margin-bottom: .75rem;' }, [
 		card(_('\u6a21\u677f'), profileOk ? _('\u5c31\u7eea') : _('\u9519\u8bef'), _('\u4e0a\u6b21\u540c\u6b65\uff1a%s | %s').format(profileSyncTime, profileSourceText), statusTone(profileOk)),
 		card(_('\u8ba2\u9605'), nodeCount ? _('%d \u4e2a\u8282\u70b9').format(nodeCount) : _('\u65e0\u8282\u70b9'), _('\u4e0a\u6b21\u5237\u65b0\uff1a%s | %s').format(snapshotTime, subAutoText), subScheduleWarning ? '#ea580c' : statusTone(sourceCount > 0 && nodeCount > 0, sourceCount > 0)),
 		card(_('\u89c4\u5219\u96c6'), missingRules === 0 ? _('\u5c31\u7eea') : _('\u9700\u8981\u5904\u7406'), _('\u4e0a\u6b21\u540c\u6b65\uff1a%s | \u9700\u8981 %d / \u5df2\u5c31\u7eea %d / \u7f3a\u5931 %d / \u672c\u5730\u591a\u4f59 %d | %s | %s').format(rulesTime, requiredRules, readyRules, missingRules, extraRules, rulesMode, rulesResultText), rulesScheduleWarning ? '#ea580c' : statusTone(missingRules === 0 && requiredRules > 0, requiredRules > 0)),
@@ -432,8 +451,8 @@ function resourceCards() {
 
 function operationButtons() {
 	return E('div', { 'style': sectionStyle() }, [
-		E('h3', { 'style': 'margin-top: 0;' }, _('\u8fd0\u884c\u65f6\u64cd\u4f5c')),
-		E('div', { 'style': 'color: #667; margin-bottom: .75rem;' }, _('\u8d44\u6e90\u51c6\u5907\u5b8c\u6210\u540e\uff0c\u5728\u8fd9\u91cc\u6267\u884c\u751f\u6210\u3001\u68c0\u67e5\u3001\u5e94\u7528\u548c\u56de\u6eda\u3002\u7b56\u7565\u7ec4\u5207\u6362\u548c\u5ef6\u8fdf\u6d4b\u901f\u4ea4\u7ed9 Zashboard\u3002')),
+		sectionTitle(_('\u8fd0\u884c\u65f6\u64cd\u4f5c')),
+		sectionDescription(_('\u8d44\u6e90\u51c6\u5907\u5b8c\u6210\u540e\uff0c\u5728\u8fd9\u91cc\u6267\u884c\u751f\u6210\u3001\u68c0\u67e5\u3001\u5e94\u7528\u548c\u56de\u6eda\u3002\u7b56\u7565\u7ec4\u5207\u6362\u548c\u5ef6\u8fdf\u6d4b\u901f\u4ea4\u7ed9 Zashboard\u3002')),
 		E('div', {
 			'id': 'shinra-overview-action-status',
 			'style': 'display: %s; border: 1px solid %s; border-radius: 8px; padding: .75rem; margin-bottom: .75rem; background: %s; color: %s;'.format(
@@ -455,7 +474,7 @@ function operationButtons() {
 
 function entryLinks() {
 	return E('div', { 'style': sectionStyle() }, [
-		E('h3', { 'style': 'margin-top: 0;' }, _('\u5feb\u6377\u5165\u53e3')),
+		sectionTitle(_('\u5feb\u6377\u5165\u53e3')),
 		E('div', { 'style': 'display: flex; flex-wrap: wrap;' }, [
 			actionLink(_('\u6253\u5f00 Zashboard'), 'admin/services/shinra/panel', true),
 			actionLink(_('\u7ba1\u7406\u8d44\u6e90'), 'admin/services/shinra/resources'),
@@ -468,13 +487,12 @@ function renderPage() {
 	const loadError = pageLoadError();
 
 	return E('div', { 'id': 'shinra-overview-root', 'class': 'cbi-map' }, [
-		E('h2', {}, _('Shinra')),
-		E('p', {}, _('\u6982\u89c8\u662f\u63a7\u5236\u9762\u9996\u9875\u3002\u8fd0\u884c\u65f6\u7b56\u7565\u7ec4\u4ea4\u4e92\u7531 Zashboard \u5904\u7406\u3002')),
-		loadError ? E('div', { 'style': 'border: 1px solid #fecaca; border-radius: 8px; padding: .75rem; margin-bottom: 1rem; background: #fef2f2; color: #991b1b;' }, loadError) : '',
-		E('div', { 'class': 'cbi-section' }, [
-			E('h3', {}, _('\u8fd0\u884c\u65f6\u72b6\u6001')),
+		pageHeader(_('Shinra'), _('\u6982\u89c8\u662f\u63a7\u5236\u9762\u9996\u9875\u3002\u8fd0\u884c\u65f6\u7b56\u7565\u7ec4\u4ea4\u4e92\u7531 Zashboard \u5904\u7406\u3002')),
+		loadError ? E('div', { 'style': 'border: 1px solid #fecaca; border-radius: 8px; padding: .65rem; margin: 0 0 .75rem; background: #fef2f2; color: #991b1b;' }, loadError) : '',
+		E('div', { 'style': sectionStyle() }, [
+			sectionTitle(_('\u8fd0\u884c\u65f6\u72b6\u6001')),
 			runtimeCards(),
-			E('h3', {}, _('\u8d44\u6e90\u5c31\u7eea\u72b6\u6001')),
+			sectionTitle(_('\u8d44\u6e90\u5c31\u7eea\u72b6\u6001')),
 			resourceCards(),
 			operationButtons(),
 			entryLinks()

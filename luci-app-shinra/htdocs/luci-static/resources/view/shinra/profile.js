@@ -70,11 +70,34 @@ function sourceFetchStrategy() {
 }
 
 function sectionStyle() {
-	return 'border: 1px solid #dfe3e8; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; background: #fff;';
+	return 'border: 1px solid #dfe3e8; border-radius: 8px; padding: .75rem 1rem; margin: 0 0 .75rem; background: #fff;';
 }
 
 function mutedStyle() {
-	return 'color: #667; overflow-wrap: anywhere;';
+	return 'color: #667; line-height: 1.35; overflow-wrap: anywhere;';
+}
+
+function pageHeader(title, description) {
+	return E('div', { 'style': sectionStyle() }, [
+		E('h2', { 'style': 'margin: 0 0 .35rem; line-height: 1.25;' }, title),
+		E('p', { 'style': mutedStyle() + ' margin: 0;' }, description)
+	]);
+}
+
+function sectionTitle(title) {
+	return E('h3', { 'style': 'margin: 0 0 .45rem; line-height: 1.25;' }, title);
+}
+
+function sectionDescription(text) {
+	return E('div', { 'style': mutedStyle() + ' margin: 0 0 .6rem;' }, text);
+}
+
+function fieldLabel(text) {
+	return E('div', { 'style': 'font-size: 12px; color: #667; font-weight: 700; margin: 0 0 .25rem; line-height: 1.25;' }, text);
+}
+
+function actionRow(children) {
+	return E('div', { 'style': 'display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; margin-top: .7rem;' }, children);
 }
 
 function statusPill(text, level) {
@@ -226,10 +249,10 @@ function restoreDefault() {
 
 function sourceSettings() {
 	return E('div', { 'style': sectionStyle() }, [
-		E('h3', { 'style': 'margin-top: 0;' }, _('\u6a21\u677f\u540c\u6b65')),
-		E('div', { 'style': mutedStyle() + ' margin-bottom: .75rem;' }, _('\u8bbe\u7f6e\u8fdc\u7a0b JSON \u6a21\u677f\u5730\u5740\uff0c\u5e76\u540c\u6b65\u5230 /etc/shinra/main-profile.json\u3002\u540c\u6b65\u4f1a\u6821\u9a8c\u6a21\u677f\uff0c\u5e76\u5728\u66ff\u6362\u524d\u521b\u5efa\u5907\u4efd\u3002')),
+		sectionTitle(_('\u6a21\u677f\u540c\u6b65')),
+		sectionDescription(_('\u8bbe\u7f6e\u8fdc\u7a0b JSON \u6a21\u677f\u5730\u5740\uff0c\u5e76\u540c\u6b65\u5230 /etc/shinra/main-profile.json\u3002\u540c\u6b65\u4f1a\u6821\u9a8c\u6a21\u677f\uff0c\u5e76\u5728\u66ff\u6362\u524d\u521b\u5efa\u5907\u4efd\u3002')),
 		E('label', {}, [
-			E('div', { 'style': 'font-size: 12px; color: #667; font-weight: 700; margin-bottom: .25rem;' }, _('\u6a21\u677f\u5730\u5740')),
+			fieldLabel(_('\u6a21\u677f\u5730\u5740')),
 			E('input', {
 				'id': 'shinra-profile-source-url',
 				'class': 'cbi-input-text',
@@ -238,14 +261,14 @@ function sourceSettings() {
 				'value': sourceInputUrl()
 			})
 		]),
-		E('label', { 'style': 'display: block; margin-top: .75rem;' }, [
-			E('div', { 'style': 'font-size: 12px; color: #667; font-weight: 700; margin-bottom: .25rem;' }, _('\u4e0b\u8f7d\u7b56\u7565')),
+		E('label', { 'style': 'display: block; margin-top: .6rem;' }, [
+			fieldLabel(_('\u4e0b\u8f7d\u7b56\u7565')),
 			E('select', { 'id': 'shinra-profile-fetch-strategy', 'class': 'cbi-input-select', 'style': 'min-width: 220px;' }, [
 				E('option', { 'value': 'direct', 'selected': sourceFetchStrategy() === 'direct' ? 'selected' : null }, _('\u76f4\u8fde')),
 				E('option', { 'value': 'proxy', 'selected': sourceFetchStrategy() === 'proxy' ? 'selected' : null }, _('\u4ee3\u7406'))
 			])
 		]),
-		E('div', { 'style': 'display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; margin-top: .85rem;' }, [
+		actionRow([
 			E('button', { 'type': 'button', 'class': 'btn cbi-button cbi-button-save', 'click': function(ev) { ev.preventDefault(); return saveSource(); } }, _('\u4fdd\u5b58\u6a21\u677f\u6e90')),
 			E('button', { 'type': 'button', 'class': 'btn cbi-button cbi-button-apply', 'click': function(ev) { ev.preventDefault(); return syncRemote(); } }, _('\u540c\u6b65\u6a21\u677f'))
 		]),
@@ -255,9 +278,9 @@ function sourceSettings() {
 
 function localActions() {
 	return E('div', { 'style': sectionStyle() }, [
-		E('h3', { 'style': 'margin-top: 0;' }, _('\u672c\u5730\u6062\u590d')),
-		E('div', { 'style': mutedStyle() + ' margin-bottom: .75rem;' }, _('\u8fd9\u4e9b\u64cd\u4f5c\u53ea\u4fee\u6539 main-profile.json \u53ca\u5176\u5907\u4efd\uff0c\u4e0d\u4f1a\u751f\u6210\u5019\u9009\u914d\u7f6e\u3001\u5e94\u7528\u8fd0\u884c\u914d\u7f6e\u6216\u91cd\u542f sing-box\u3002')),
-		E('div', { 'style': 'display: flex; gap: .5rem; flex-wrap: wrap;' }, [
+		sectionTitle(_('\u672c\u5730\u6062\u590d')),
+		sectionDescription(_('\u8fd9\u4e9b\u64cd\u4f5c\u53ea\u4fee\u6539 main-profile.json \u53ca\u5176\u5907\u4efd\uff0c\u4e0d\u4f1a\u751f\u6210\u5019\u9009\u914d\u7f6e\u3001\u5e94\u7528\u8fd0\u884c\u914d\u7f6e\u6216\u91cd\u542f sing-box\u3002')),
+		E('div', { 'style': 'display: flex; gap: .5rem; flex-wrap: wrap; margin-top: 0;' }, [
 			E('button', { 'type': 'button', 'class': 'btn cbi-button cbi-button-neutral', 'click': function(ev) { ev.preventDefault(); return rollbackProfile(); } }, _('\u56de\u6eda')),
 			E('button', { 'type': 'button', 'class': 'btn cbi-button cbi-button-remove', 'click': function(ev) { ev.preventDefault(); return restoreDefault(); } }, _('\u6062\u590d\u5185\u7f6e\u6a21\u677f'))
 		])
@@ -269,12 +292,12 @@ function profilePreview() {
 	const valid = profileResult && profileResult.ok && dataOf(profileResult).valid !== false;
 
 	return E('div', { 'style': sectionStyle() }, [
-		E('div', { 'style': 'display: flex; justify-content: space-between; gap: .75rem; align-items: center; flex-wrap: wrap; margin-bottom: .75rem;' }, [
+		E('div', { 'style': 'display: flex; justify-content: space-between; gap: .75rem; align-items: center; flex-wrap: wrap; margin-bottom: .6rem;' }, [
 			E('h3', { 'style': 'margin: 0;' }, _('\u53ea\u8bfb\u9884\u89c8')),
 			valid ? statusPill(_('\u6709\u6548'), 'ok') : statusPill(_('\u65e0\u6548'), 'error')
 		]),
 		E('pre', {
-			'style': 'max-height: 36rem; overflow: auto; padding: .85rem; border-radius: 8px; background: #0f172a; color: #e5e7eb; font-family: monospace; white-space: pre;'
+			'style': 'max-height: 36rem; overflow: auto; padding: .85rem; margin: 0; border-radius: 8px; background: #0f172a; color: #e5e7eb; font-family: monospace; white-space: pre;'
 		}, content || _('\u6ca1\u6709\u6a21\u677f\u5185\u5bb9\u3002'))
 	]);
 }
@@ -287,8 +310,10 @@ function redraw() {
 
 function renderPage() {
 	return E('div', { 'id': 'shinra-profile-root', 'class': 'cbi-map' }, [
-		E('h2', {}, _('\u6a21\u677f')),
-		E('p', {}, _('\u53ea\u8bfb\u9884\u89c8 main-profile.json\uff0c\u5e76\u652f\u6301\u8fdc\u7a0b\u6a21\u677f\u540c\u6b65\u3002')),
+		pageHeader(
+			_('\u6a21\u677f'),
+			_('\u53ea\u8bfb\u9884\u89c8 main-profile.json\uff0c\u5e76\u652f\u6301\u8fdc\u7a0b\u6a21\u677f\u540c\u6b65\u3002')
+		),
 		sourceSettings(),
 		localActions(),
 		profilePreview()
