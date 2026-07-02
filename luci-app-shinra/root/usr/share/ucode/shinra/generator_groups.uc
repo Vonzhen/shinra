@@ -131,7 +131,8 @@ function generate_region_groups(config, nodes, profile_tags, node_tags) {
 				outbounds: outbounds,
 				url: urltest.url,
 				interval: urltest.interval,
-				tolerance: urltest.tolerance
+				tolerance: urltest.tolerance,
+				interrupt_exist_connections: true
 			});
 		}
 	}
