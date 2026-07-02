@@ -1,6 +1,7 @@
 'use strict';
 'require view';
 'require rpc';
+'require shinra.time as shinraTime';
 
 const callLogsGet = rpc.declare({
 	object: 'shinra',
@@ -235,6 +236,7 @@ function fileRows(files) {
 		'runtime_config',
 		'runtime_backup',
 		'runtime_state',
+		'auto_apply_state',
 		'last_error'
 	];
 	const rows = [];
@@ -288,7 +290,7 @@ function controlplanePanel() {
 			field(_('Runtime 配置'), runtime.runtime_config_path || '-'),
 			field(_('Runtime Hash'), runtime.runtime_config_hash || '-'),
 			field(_('最近应用结果'), runtime.last_apply_result || '-'),
-			field(_('检查时间'), runtime.checked_at || '-')
+			field(_('检查时间'), shinraTime.formatMaybeTime(runtime.checked_at))
 		]),
 		E('div', { 'style': sectionStyle() }, [
 			sectionTitle(_('控制面文件')),

@@ -23,6 +23,7 @@ const PATH = {
 	CRON_ROOT: "/etc/crontabs/root",
 	TASK_DIR: "/var/run/shinra/tasks",
 	RUNNER_DIR: "/var/run/shinra/runner",
+	AUTO_APPLY_STATE: "/var/run/shinra/auto-apply.state.json",
 	SCHEDULER_DIR: "/var/run/shinra/scheduler",
 	SCHEDULER_STATE: "/var/run/shinra/scheduler/state.json",
 	LAST_APPLY_RESULT: "/var/run/shinra/last-apply-result",

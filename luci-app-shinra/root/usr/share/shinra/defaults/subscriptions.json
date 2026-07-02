@@ -24,6 +24,7 @@
     "mode": "auto",
     "fetch_strategy": "direct",
     "auto_update": false,
+    "auto_apply_after_update": false,
     "update_hour": 4,
     "repositories": {
       "private": "",

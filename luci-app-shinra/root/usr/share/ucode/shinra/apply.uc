@@ -112,11 +112,16 @@ function config_apply(trace_id, req) {
 		lock = lock_acquire("runtime", trace_id);
 		let committed = artifact_commit_runtime(trace_id, PATH.CANDIDATE_CONFIG, PATH.RUNTIME_CONFIG, PATH.RUNTIME_CONFIG_BAK);
 		backup_created = committed.backup_created == true;
+		let defer_ruleset_confirm = type(req) == "object" && req != null && req.defer_ruleset_confirm == true;
 
 		write_last_error("");
 		write_last_apply_result("apply_ok");
 		let observed = restart_runtime(trace_id);
-		let ruleset_transaction = confirm_pending_rulesets(trace_id);
+		let ruleset_transaction = defer_ruleset_confirm ? {
+			pending: true,
+			deferred: true,
+			confirmed_count: 0
+		} : confirm_pending_rulesets(trace_id);
 		lock_release(lock);
 
 		return Success({

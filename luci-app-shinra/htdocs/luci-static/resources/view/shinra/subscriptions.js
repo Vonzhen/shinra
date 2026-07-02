@@ -1,6 +1,7 @@
 'use strict';
 'require view';
 'require rpc';
+'require shinra.time as shinraTime';
 
 const callSubscriptionsGet = rpc.declare({
 	object: 'shinra',
@@ -22,6 +23,19 @@ const callSubscriptionsRefresh = rpc.declare({
 	expect: { '': {} }
 });
 
+const callSubscriptionRefreshSourceStart = rpc.declare({
+	object: 'shinra',
+	method: 'subscription_refresh_source_start',
+	params: [ 'source_id', 'strategy' ],
+	expect: { '': {} }
+});
+
+const callSubscriptionsRefreshStatus = rpc.declare({
+	object: 'shinra',
+	method: 'subscriptions_refresh_status',
+	expect: { '': {} }
+});
+
 const callNodeSnapshotSummary = rpc.declare({
 	object: 'shinra',
 	method: 'node_snapshot_summary',
@@ -36,14 +50,15 @@ const callSubscriptionTestSource = rpc.declare({
 });
 
 const DEFAULT_REGION_KEYWORDS = {
-	HK: [ 'HK', 'Hong Kong', 'HongKong' ],
-	TW: [ 'TW', 'Taiwan' ],
-	SG: [ 'SG', 'Singapore' ],
-	JP: [ 'JP', 'Japan' ],
-	US: [ 'US', 'USA', 'United States' ]
+	HK: [ 'HK', 'Hong Kong', 'HongKong', '香港' ],
+	TW: [ 'TW', 'Taiwan', '台湾', '台灣' ],
+	SG: [ 'SG', 'Singapore', '新加坡', '狮城', '獅城' ],
+	JP: [ 'JP', 'Japan', '日本' ],
+	US: [ 'US', 'USA', 'United States', '美国', '美國' ]
 };
+const DEFAULT_REGION_KEYS = [ 'HK', 'TW', 'SG', 'JP', 'US' ];
 
-const DEFAULT_BANNED_KEYWORDS = 'expire|expired|traffic|invalid|remaining';
+const DEFAULT_BANNED_KEYWORDS = 'expire|expired|traffic|invalid|remaining|过期|到期|失效|无效|剩余|流量|重置|订阅|套餐|官网|用量';
 const DEFAULT_URLTEST_PARAMS = {
 	url: 'https://www.gstatic.com/generate_204',
 	interval: '3m',
@@ -53,6 +68,7 @@ const DEFAULT_URLTEST_PARAMS = {
 const DEFAULT_RULESET_POLICY = {
 	mode: 'auto',
 	auto_update: false,
+	auto_apply_after_update: false,
 	update_hour: 4,
 	repositories: {
 		private: '',
@@ -71,8 +87,41 @@ function cloneArray(values) {
 	return Array.isArray(values) ? values.slice() : [];
 }
 
+function appendUnique(values, value) {
+	if (typeof value !== 'string' || value === '')
+		return;
+	if (values.indexOf(value) < 0)
+		values.push(value);
+}
+
+function mergeKeywordList(defaults, values) {
+	let merged = cloneArray(defaults);
+	(Array.isArray(values) ? values : []).forEach(function(value) {
+		appendUnique(merged, value);
+	});
+	return merged;
+}
+
+function mergePipeText(defaults, value) {
+	let merged = [];
+	(defaults || '').split('|').forEach(function(item) {
+		appendUnique(merged, item);
+	});
+	(value || '').split('|').forEach(function(item) {
+		appendUnique(merged, item);
+	});
+	return merged.join('|');
+}
+
+function normalizeUrltestUrl(value) {
+	let url = typeof value === 'string' && value !== '' ? value : DEFAULT_URLTEST_PARAMS.url;
+	if (url.indexOf('://x.test/') >= 0 || url === 'http://x.test' || url === 'https://x.test')
+		return DEFAULT_URLTEST_PARAMS.url;
+	return url;
+}
+
 function regionKeys(policy) {
-	return Object.keys(policy.region_keywords || DEFAULT_REGION_KEYWORDS);
+	return DEFAULT_REGION_KEYS.slice();
 }
 
 function normalizePolicy(raw) {
@@ -80,24 +129,26 @@ function normalizePolicy(raw) {
 	let regionKeywords = {};
 	let inputKeywords = policy.region_keywords && typeof policy.region_keywords === 'object' && !Array.isArray(policy.region_keywords) ? policy.region_keywords : DEFAULT_REGION_KEYWORDS;
 
-	Object.keys(inputKeywords).forEach(function(region) {
+	DEFAULT_REGION_KEYS.forEach(function(region) {
 		let values = Array.isArray(inputKeywords[region]) ? inputKeywords[region] : [];
-		regionKeywords[region] = values.filter(function(value) {
+		values = values.filter(function(value) {
 			return typeof value === 'string' && value !== '';
 		});
+		regionKeywords[region] = mergeKeywordList(DEFAULT_REGION_KEYWORDS[region], values);
 	});
-
-	if (!Object.keys(regionKeywords).length)
-		regionKeywords = DEFAULT_REGION_KEYWORDS;
 
 	let keys = Object.keys(regionKeywords);
 	let sources = Array.isArray(policy.sources) ? policy.sources.map(function(source) {
 		source = source || {};
+		let allowed = Array.isArray(source.allowed_regions) ? cloneArray(source.allowed_regions).filter(function(region) {
+			return keys.indexOf(region) >= 0;
+		}) : keys.slice();
 		return {
+			id: source.id || '',
 			name: source.name || '',
 			url: source.url || '',
 			enabled: source.enabled === false ? false : true,
-			allowed_regions: Array.isArray(source.allowed_regions) ? cloneArray(source.allowed_regions) : keys.slice()
+			allowed_regions: allowed
 		};
 	}) : [];
 
@@ -105,9 +156,9 @@ function normalizePolicy(raw) {
 		schema_version: 1,
 		refresh_strategy: policy.refresh_strategy === 'proxy' ? 'proxy' : 'direct',
 		region_keywords: regionKeywords,
-		banned_keywords: typeof policy.banned_keywords === 'string' && policy.banned_keywords !== '' ? policy.banned_keywords : DEFAULT_BANNED_KEYWORDS,
+		banned_keywords: mergePipeText(DEFAULT_BANNED_KEYWORDS, policy.banned_keywords),
 		urltest_params: {
-			url: policy.urltest_params && policy.urltest_params.url || DEFAULT_URLTEST_PARAMS.url,
+			url: normalizeUrltestUrl(policy.urltest_params && policy.urltest_params.url),
 			interval: policy.urltest_params && policy.urltest_params.interval || DEFAULT_URLTEST_PARAMS.interval,
 			tolerance: policy.urltest_params && policy.urltest_params.tolerance != null ? Number(policy.urltest_params.tolerance) : DEFAULT_URLTEST_PARAMS.tolerance
 		},
@@ -145,6 +196,7 @@ function normalizeRulesetPolicy(raw) {
 	return {
 		mode: mode,
 		auto_update: raw.auto_update === true,
+		auto_apply_after_update: raw.auto_apply_after_update === true,
 		update_hour: updateHour,
 		repositories: {
 			private: typeof repositories.private === 'string' ? repositories.private : DEFAULT_RULESET_POLICY.repositories.private,
@@ -367,6 +419,14 @@ function sourceMatrix(policy, summary) {
 							}, _('测试')),
 							' ',
 							E('button', {
+								'class': 'btn cbi-button cbi-button-apply',
+								'click': function(ev) {
+									ev.preventDefault();
+									refreshOneSource(index);
+								}
+							}, _('刷新')),
+							' ',
+							E('button', {
 								'class': 'btn cbi-button cbi-button-remove',
 								'click': function(ev) {
 									ev.preventDefault();
@@ -579,6 +639,7 @@ function sourceEditor(policy, index) {
 
 	let isNew = index === 'new';
 	let source = isNew ? {
+		id: '',
 		name: '',
 		url: '',
 		enabled: true,
@@ -633,6 +694,17 @@ function sourceRows(summary) {
 			E('div', { 'style': 'overflow-wrap: anywhere; color: #667;' }, source.error || '-')
 		]);
 	});
+}
+
+function sourceSummaryById(summary, sourceId, sourceName) {
+	let sources = summary && Array.isArray(summary.sources) ? summary.sources : [];
+
+	for (let i = 0; i < sources.length; i++) {
+		if ((sourceId && sources[i].id === sourceId) || (!sourceId && sourceName && sources[i].name === sourceName))
+			return sources[i];
+	}
+
+	return {};
 }
 
 function nodesForSource(summary, sourceName) {
@@ -719,7 +791,7 @@ function snapshotSummary(summary) {
 			field(_('节点'), '%d'.format(summary && summary.node_count || 0)),
 			field(_('订阅源'), '%d'.format(summary && summary.source_count || 0)),
 			field(_('策略'), summary && summary.refresh_strategy || 'direct'),
-			field(_('更新时间'), summary && summary.updated_at || '-')
+			field(_('更新时间'), shinraTime.formatMaybeTime(summary && summary.updated_at))
 		]),
 		E('div', { 'style': sectionStyle() }, [
 			sectionTitle(_('订阅源摘要')),
@@ -738,7 +810,7 @@ function snapshotSummary(summary) {
 function snapshotDetails(summary) {
 	return collapsible(
 		_('节点快照'),
-	_('%d 个节点，%d 个订阅源，更新于 %s').format(summary && summary.node_count || 0, summary && summary.source_count || 0, summary && summary.updated_at || '-'),
+	_('%d 个节点，%d 个订阅源，更新于 %s').format(summary && summary.node_count || 0, summary && summary.source_count || 0, shinraTime.formatMaybeTime(summary && summary.updated_at)),
 		snapshotSummary(summary),
 		false
 	);
@@ -759,7 +831,7 @@ function collectPolicyFromPage() {
 	});
 	policy.banned_keywords = getValue('shinra-banned-keywords') || DEFAULT_BANNED_KEYWORDS;
 	policy.urltest_params = {
-		url: getValue('shinra-urltest-url') || DEFAULT_URLTEST_PARAMS.url,
+		url: normalizeUrltestUrl(getValue('shinra-urltest-url')),
 		interval: getValue('shinra-urltest-interval') || DEFAULT_URLTEST_PARAMS.interval,
 		tolerance: Number(getValue('shinra-urltest-tolerance') || DEFAULT_URLTEST_PARAMS.tolerance)
 	};
@@ -777,6 +849,7 @@ function collectPolicyFromPage() {
 				allowed.push(region);
 		});
 		return {
+			id: source.id,
 			name: source.name,
 			url: source.url,
 			enabled: checked(matrixId(index, 'enabled')),
@@ -830,6 +903,111 @@ function testEditorSource() {
 	);
 }
 
+function refreshStatusDone(status) {
+	return [ 'success', 'partial', 'failed_preserved', 'failed_no_snapshot', 'failed' ].indexOf(status || '') >= 0;
+}
+
+function waitSourceRefresh(sourceName, attempt) {
+	return callSubscriptionsRefreshStatus().then(function(result) {
+		let task = result && result.ok && result.data ? result.data.task || {} : {};
+		let status = task.status || '';
+
+		if (!refreshStatusDone(status) && attempt < 30) {
+			setStatus(_('正在刷新订阅源：%s...').format(sourceName || '-'), true);
+			return new Promise(function(resolve) {
+				window.setTimeout(resolve, 1000);
+			}).then(function() {
+				return waitSourceRefresh(sourceName, attempt + 1);
+			});
+		}
+
+		return callNodeSnapshotSummary().then(function(summary) {
+			if (summary && summary.ok && summary.data)
+				updateSummary(summary.data);
+
+			let ok = status === 'success' || status === 'partial';
+			if (status === 'failed_preserved')
+				setStatus(_('订阅源刷新失败，已保留旧节点：%s。').format(sourceName || '-'), false);
+			else if (status === 'success')
+				setStatus(_('订阅源已刷新：%s。准备使用新节点时，请生成候选配置。').format(sourceName || '-'), true);
+			else if (status === 'partial')
+				setStatus(_('订阅源刷新部分完成：%s。').format(sourceName || '-'), false);
+			else
+				setStatus(_('订阅源刷新状态：%s。').format(status || _('未知')), ok);
+		});
+	});
+}
+
+function waitSourceRefreshSummary(sourceName, sourceId, attempt) {
+	return callSubscriptionsRefreshStatus().then(function(result) {
+		let task = result && result.ok && result.data ? result.data.task || {} : {};
+		let status = task.status || '';
+
+		if (!refreshStatusDone(status) && attempt < 30) {
+			setStatus(_('正在刷新订阅源：%s...').format(sourceName || '-'), true);
+			return new Promise(function(resolve) {
+				window.setTimeout(resolve, 1000);
+			}).then(function() {
+				return waitSourceRefreshSummary(sourceName, sourceId, attempt + 1);
+			});
+		}
+
+		return callNodeSnapshotSummary().then(function(summary) {
+			let data = summary && summary.ok && summary.data ? summary.data : {};
+			if (summary && summary.ok && summary.data)
+				updateSummary(summary.data);
+
+			let sourceSummary = sourceSummaryById(data, sourceId, sourceName);
+			let nodeCount = sourceSummary.node_count || 0;
+			let strategy = data.refresh_strategy || 'direct';
+			if (status === 'failed_preserved')
+				setStatus(_('订阅源刷新失败，已保留旧节点：%d 个节点，策略 %s。').format(nodeCount, strategy), false);
+			else if (status === 'success')
+				setStatus(_('订阅源已刷新：%d 个节点，策略 %s。准备使用新节点时，请生成候选配置。').format(nodeCount, strategy), true);
+			else if (status === 'partial')
+				setStatus(_('订阅源部分刷新：%d 个节点，策略 %s。').format(nodeCount, strategy), false);
+			else
+				setStatus(_('订阅源刷新状态：%s。').format(status || _('未知')), status === 'success' || status === 'partial');
+		});
+	});
+}
+
+function refreshOneSource(index, retried) {
+	let policy = collectPolicyFromPage();
+	let source = policy.sources[index] || {};
+	let sourceId = source.id || '';
+	let sourceName = source.name || _('未命名订阅源');
+	let strategy = policy.refresh_strategy || getValue('shinra-refresh-strategy') || 'direct';
+
+	if (!sourceId) {
+		if (!retried) {
+			setStatus(_('Reloading saved subscription settings...'), true);
+			return reloadPolicyFromBackend().then(function() {
+				return refreshOneSource(index, true);
+			}).catch(function(error) {
+				setStatus(error.message || String(error), false);
+			});
+		}
+		setStatus(_('请先保存订阅设置，再刷新单个订阅源。'), false);
+		return Promise.resolve();
+	}
+
+	setStatus(_('正在提交订阅源刷新：%s...').format(sourceName), true);
+	return callSubscriptionRefreshSourceStart(sourceId, strategy).then(function(result) {
+		if (!(result && result.ok)) {
+			setStatus('%s: %s'.format(result && (result.message || result.code) || _('刷新失败'), subscriptionFailureHint(result && (result.detail || result.code) || '')), false);
+			return;
+		}
+		if (!(result.data && result.data.started)) {
+			setStatus(_('已有订阅刷新任务正在运行，请稍后再试。'), false);
+			return;
+		}
+		return waitSourceRefreshSummary(sourceName, sourceId, 0);
+	}).catch(function(error) {
+		setStatus(error.message || String(error), false);
+	});
+}
+
 function saveSourceEditor() {
 	let editor = document.getElementById('shinra-source-editor');
 	let index = editor ? Number(editor.getAttribute('data-index')) : -1;
@@ -851,6 +1029,7 @@ function saveSourceEditor() {
 		});
 	else
 		policy.sources[index] = {
+			id: policy.sources[index].id || '',
 			name: getValue('shinra-editor-name').trim(),
 			url: getValue('shinra-editor-url').trim(),
 			enabled: checked('shinra-editor-enabled'),
@@ -868,6 +1047,17 @@ function updateSummary(summary) {
 	if (container)
 		container.parentNode.replaceChild(snapshotSummary(summary), container);
 	updateMain(draftPolicy(), summary || {}, null);
+}
+
+function reloadPolicyFromBackend() {
+	return callSubscriptionsGet().then(function(result) {
+		if (!(result && result.ok && result.data))
+			return;
+
+		let policy = parseSubscriptions(result.data.content || '{}');
+		setDraft(policy);
+		updateMain(policy, window.shinraNodeSnapshotSummary || {}, null);
+	});
 }
 
 function renderMain(policy, summary, editIndex) {

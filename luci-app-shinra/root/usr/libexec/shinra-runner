@@ -7,7 +7,9 @@ TARGET="${2:-}"
 TRACE_ID="${3:-shinra-runner}"
 STRATEGY="${4:-}"
 NOTIFY="${5:-}"
+AUTO_APPLY="${6:-}"
 TAG=""
+SOURCE_ID=""
 RUN_DIR="/var/run/shinra"
 RUNNER_DIR="/var/run/shinra/runner"
 LOCK=""
@@ -25,6 +27,13 @@ case "${TASK_TYPE}:${TARGET}" in
 	subscription.refresh:subscriptions_refresh)
 		LOCK="${RUNNER_DIR}/subscription.refresh.lock"
 		;;
+	subscription.refresh:subscription_refresh_source)
+		LOCK="${RUNNER_DIR}/subscription.refresh.lock"
+		SOURCE_ID="${4:-}"
+		STRATEGY="${5:-}"
+		NOTIFY="${6:-}"
+		AUTO_APPLY="${7:-}"
+		;;
 	*)
 		exit 2
 		;;
@@ -41,6 +50,16 @@ case "$TAG" in
 		TAG=""
 		;;
 esac
+
+case "$SOURCE_ID" in
+	""|*[!A-Za-z0-9._-]*)
+		SOURCE_ID=""
+		;;
+esac
+
+if [ "$TARGET" = "subscription_refresh_source" ] && [ -z "$SOURCE_ID" ]; then
+	exit 2
+fi
 
 case "$STRATEGY" in
 	""|direct|proxy)
@@ -62,6 +81,15 @@ case "$NOTIFY" in
 		;;
 esac
 
+case "$AUTO_APPLY" in
+	autoapply|true|1)
+		AUTO_APPLY_INTENT="true"
+		;;
+	*)
+		AUTO_APPLY_INTENT="false"
+		;;
+esac
+
 mkdir -p "$RUN_DIR" "$RUNNER_DIR"
 
 if ! mkdir "$LOCK" 2>/dev/null; then
@@ -74,5 +102,5 @@ cleanup() {
 
 trap cleanup EXIT INT TERM
 
-ucode -e 'import { runner_execute } from "shinra.core.runner"; let code = runner_execute("'"$TASK_TYPE"'", "'"$TARGET"'", "'"$TRACE_ID"'", { strategy: "'"$STRATEGY"'", tag: "'"$TAG"'", notify_intent: '"$NOTIFY_INTENT"' }); if (code != 0) die("runner failed: " + code);'
+ucode -e 'import { runner_execute } from "shinra.core.runner"; let code = runner_execute("'"$TASK_TYPE"'", "'"$TARGET"'", "'"$TRACE_ID"'", { strategy: "'"$STRATEGY"'", tag: "'"$TAG"'", source_id: "'"$SOURCE_ID"'", notify_intent: '"$NOTIFY_INTENT"', scheduler_intent: '"$AUTO_APPLY_INTENT"', auto_apply_intent: '"$AUTO_APPLY_INTENT"' }); if (code != 0) die("runner failed: " + code);'
 exit "$?"
