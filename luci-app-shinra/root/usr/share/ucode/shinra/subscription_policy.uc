@@ -4,6 +4,8 @@
 
 'use strict';
 
+import { ExecResult } from 'shinra.core.utils';
+
 function append_unique(list, value) {
 	if (type(value) != "string" || value == "")
 		return;
@@ -18,16 +20,16 @@ function append_unique(list, value) {
 
 function default_region_keywords() {
 	return {
-		HK: [ "HK", "Hong Kong", "HongKong" ],
-		TW: [ "TW", "Taiwan" ],
-		SG: [ "SG", "Singapore" ],
-		JP: [ "JP", "Japan" ],
-		US: [ "US", "USA", "United States" ]
+		HK: [ "HK", "Hong Kong", "HongKong", "香港" ],
+		TW: [ "TW", "Taiwan", "台湾", "台灣" ],
+		SG: [ "SG", "Singapore", "新加坡", "狮城", "獅城" ],
+		JP: [ "JP", "Japan", "日本" ],
+		US: [ "US", "USA", "United States", "美国", "美國" ]
 	};
 }
 
 function default_banned_keywords() {
-	return "expire|expired|traffic|invalid|remaining";
+	return "expire|expired|traffic|invalid|remaining|过期|到期|失效|无效|剩余|流量|重置|订阅|套餐|官网|用量";
 }
 function default_urltest_params() {
 	return {
@@ -42,6 +44,7 @@ function default_ruleset_policy() {
 		mode: "auto",
 		fetch_strategy: "direct",
 		auto_update: false,
+		auto_apply_after_update: false,
 		update_hour: 4,
 		repositories: {
 			"private": "",
@@ -181,22 +184,61 @@ function clone_string_array(values, label) {
 	return result;
 }
 
+function merge_string_array(base, values, label) {
+	let result = clone_string_array(base, label);
+	if (type(values) != "array")
+		die(label + " must be an array");
+
+	for (let value in values) {
+		if (type(value) != "string" || value == "")
+			die(label + " must contain non-empty strings");
+		append_unique(result, value);
+	}
+	return result;
+}
+
+function merge_pipe_text(defaults, value) {
+	let result = "" + defaults;
+	if (type(value) != "string" || value == "")
+		return result;
+
+	let current = "";
+	for (let i = 0; i <= length(value); i++) {
+		let ch = i < length(value) ? substr(value, i, 1) : "|";
+		if (ch == "|") {
+			if (current != "" && index("|" + result + "|", "|" + current + "|") < 0)
+				result = result + "|" + current;
+			current = "";
+			continue;
+		}
+		current = current + ch;
+	}
+
+	return result;
+}
+
 function normalize_region_keywords(raw) {
 	let defaults = default_region_keywords();
 	let result = {};
 	let count = 0;
 
-	if (type(raw) != "object" || raw == null || type(raw) == "array") {
-		for (let region in defaults)
-			result[region] = clone_string_array(defaults[region], "region_keywords." + region);
-		return result;
+	for (let region in defaults) {
+		result[region] = clone_string_array(defaults[region], "region_keywords." + region);
+		count = count + 1;
 	}
+
+	if (type(raw) != "object" || raw == null || type(raw) == "array")
+		return result;
 
 	for (let region in raw) {
 		if (type(region) != "string" || region == "")
 			die("region keyword key must be a non-empty string");
-		result[region] = clone_string_array(raw[region], "region_keywords." + region);
-		count = count + 1;
+		if (defaults[region])
+			result[region] = merge_string_array(defaults[region], raw[region], "region_keywords." + region);
+		else
+			result[region] = clone_string_array(raw[region], "region_keywords." + region);
+		if (!defaults[region])
+			count = count + 1;
 	}
 
 	if (count == 0)
@@ -256,6 +298,8 @@ function normalize_urltest_params(raw) {
 
 	if (substr(result.url, 0, 7) != "http://" && substr(result.url, 0, 8) != "https://")
 		die("urltest_params.url must start with http:// or https://");
+	if (index(result.url, "://x.test/") >= 0 || result.url == "http://x.test" || result.url == "https://x.test")
+		result.url = defaults.url;
 	if (type(result.interval) != "string" || result.interval == "")
 		die("urltest_params.interval must be a non-empty string");
 	if (result.tolerance < 0)
@@ -283,6 +327,7 @@ function normalize_ruleset_policy(raw) {
 		mode: defaults.mode,
 		fetch_strategy: defaults.fetch_strategy,
 		auto_update: defaults.auto_update,
+		auto_apply_after_update: defaults.auto_apply_after_update,
 		update_hour: defaults.update_hour,
 		repositories: {
 			"private": defaults.repositories["private"],
@@ -296,6 +341,7 @@ function normalize_ruleset_policy(raw) {
 		if (type(raw.fetch_strategy) == "string" && raw.fetch_strategy != "")
 			result.fetch_strategy = raw.fetch_strategy;
 		result.auto_update = raw.auto_update == true ? true : false;
+		result.auto_apply_after_update = raw.auto_apply_after_update == true ? true : false;
 		if (type(raw.update_hour) == "int")
 			result.update_hour = raw.update_hour;
 		if (type(raw.repositories) == "object" && raw.repositories != null && type(raw.repositories) != "array") {
@@ -350,7 +396,80 @@ function validate_source_url(url) {
 		die("Subscription URL must start with http:// or https://");
 }
 
-function normalize_source(source, regions) {
+function validate_source_id(id) {
+	if (type(id) != "string" || id == "")
+		die("subscription source id must be a non-empty string");
+
+	for (let i = 0; i < length(id); i++) {
+		let ch = substr(id, i, 1);
+		let ok = (ch >= "a" && ch <= "z") ||
+			(ch >= "A" && ch <= "Z") ||
+			(ch >= "0" && ch <= "9") ||
+			ch == "." || ch == "_" || ch == "-";
+		if (!ok)
+			die("Invalid subscription source id: " + id);
+	}
+}
+
+function source_has_id(source) {
+	return type(source) == "object" && source != null && type(source) != "array" &&
+		type(source.id) == "string" && source.id != "";
+}
+
+function source_id_material(index, attempt) {
+	let result = ExecResult("subscription-source-id", [ "sh", "-c", "cat /proc/sys/kernel/random/uuid 2>/dev/null || printf '%s-%s' \"$(date +%s%N 2>/dev/null || date +%s)\" \"$$\"" ]);
+	let material = result.code == 0 && type(result.stdout) == "string" && result.stdout != "" ? result.stdout : "";
+	return material + "-" + index + "-" + attempt;
+}
+
+function generated_source_id(index, attempt) {
+	let material = source_id_material(index, attempt);
+	let body = "";
+
+	for (let i = 0; i < length(material); i++) {
+		let ch = substr(material, i, 1);
+		if ((ch >= "a" && ch <= "z") || (ch >= "A" && ch <= "Z") || (ch >= "0" && ch <= "9"))
+			body = body + ch;
+		if (length(body) >= 12)
+			break;
+	}
+
+	if (body == "")
+		body = "" + index + attempt;
+
+	return "src-" + body;
+}
+
+function reserve_source_ids(config) {
+	let reserved = {};
+
+	for (let source in config.sources) {
+		if (!source_has_id(source))
+			continue;
+		validate_source_id(source.id);
+		if (reserved[source.id])
+			die("Duplicated subscription source id: " + source.id);
+		reserved[source.id] = true;
+	}
+
+	return reserved;
+}
+
+function unique_generated_source_id(index, seen_ids, reserved_ids) {
+	let id = "";
+	let attempt = 1;
+
+	while (attempt <= 16) {
+		id = generated_source_id(index, attempt);
+		if (!seen_ids[id] && !reserved_ids[id])
+			return id;
+		attempt = attempt + 1;
+	}
+
+	die("Failed to generate unique subscription source id");
+}
+
+function normalize_source(source, regions, index, seen_ids, reserved_ids) {
 	if (type(source) != "object" || source == null || type(source) == "array")
 		die("subscription source must be an object");
 	if (type(source.name) != "string" || source.name == "")
@@ -358,7 +477,11 @@ function normalize_source(source, regions) {
 
 	validate_source_url(source.url);
 
+	let id = source_has_id(source) ? source.id : unique_generated_source_id(index, seen_ids, reserved_ids);
+	validate_source_id(id);
+
 	return {
+		id: id,
 		name: source.name,
 		url: source.url,
 		enabled: source.enabled == false ? false : true,
@@ -379,15 +502,22 @@ function normalize_subscriptions_policy(config) {
 
 	let keywords = normalize_region_keywords(config.region_keywords);
 	let regions = region_keys(keywords);
-	let seen = {};
+	let reserved_ids = reserve_source_ids(config);
+	let seen_ids = {};
+	let seen_names = {};
 	let sources = [];
+	let source_index = 0;
 
 	for (let source in config.sources) {
-		let normalized = normalize_source(source, regions);
-		if (seen[normalized.name])
+		let normalized = normalize_source(source, regions, source_index, seen_ids, reserved_ids);
+		if (seen_ids[normalized.id])
+			die("Duplicated subscription source id: " + normalized.id);
+		if (seen_names[normalized.name])
 			die("Duplicated subscription source name: " + normalized.name);
-		seen[normalized.name] = true;
+		seen_ids[normalized.id] = true;
+		seen_names[normalized.name] = true;
 		push(sources, normalized);
+		source_index = source_index + 1;
 	}
 
 	return {
@@ -395,7 +525,7 @@ function normalize_subscriptions_policy(config) {
 		refresh_strategy: strategy,
 		region_keywords: keywords,
 		region_keys: regions,
-		banned_keywords: type(config.banned_keywords) == "string" && config.banned_keywords != "" ? config.banned_keywords : default_banned_keywords(),
+		banned_keywords: merge_pipe_text(default_banned_keywords(), config.banned_keywords),
 		urltest_params: normalize_urltest_params(config.urltest_params),
 		subscription_update: normalize_subscription_update_policy(config.subscription_update),
 		ruleset: normalize_ruleset_policy(config.ruleset),

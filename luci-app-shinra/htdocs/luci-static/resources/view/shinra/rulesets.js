@@ -1,6 +1,7 @@
 'use strict';
 'require view';
 'require rpc';
+'require shinra.time as shinraTime';
 
 const callRulesetInventory = rpc.declare({
 	object: 'shinra',
@@ -62,6 +63,7 @@ const callRulesetArtifactStatus = rpc.declare({
 const DEFAULT_POLICY = {
 	mode: 'remote',
 	auto_update: false,
+	auto_apply_after_update: false,
 	update_hour: 4,
 	fetch_strategy: 'direct',
 	repositories: {
@@ -100,6 +102,7 @@ function normalizePolicy(input) {
 	return {
 		mode: input.mode === 'local' ? 'local' : 'remote',
 		auto_update: input.auto_update === true,
+		auto_apply_after_update: input.auto_apply_after_update === true,
 		update_hour: hour,
 		fetch_strategy: input.fetch_strategy === 'proxy' ? 'proxy' : 'direct',
 		repositories: {
@@ -300,6 +303,7 @@ function updatePolicyFromFields() {
 	policy = normalizePolicy({
 		mode: readFieldValue('shinra-ruleset-mode', policy.mode),
 		auto_update: readFieldChecked('shinra-ruleset-auto-update', policy.auto_update),
+		auto_apply_after_update: readFieldChecked('shinra-ruleset-auto-apply-after-update', policy.auto_apply_after_update),
 		update_hour: readFieldNumber('shinra-ruleset-update-hour', policy.update_hour),
 		fetch_strategy: readFieldValue('shinra-ruleset-fetch-strategy', policy.fetch_strategy),
 		repositories: {
@@ -407,6 +411,19 @@ function localSyncSettings() {
 						'value': String(policy.update_hour),
 						'style': 'width: 100%; box-sizing: border-box;'
 					})
+				]) : '',
+				policy.auto_update ? E('label', { 'style': 'display: flex; gap: .5rem; align-items: center; min-height: 32px; margin-bottom: .15rem;' }, [
+					E('input', {
+						'id': 'shinra-ruleset-auto-apply-after-update',
+						'type': 'checkbox',
+						'checked': policy.auto_apply_after_update ? 'checked' : null,
+						'change': function(ev) {
+							updatePolicyFromFields();
+							policy.auto_apply_after_update = !!ev.target.checked;
+							redraw();
+						}
+					}),
+					E('span', {}, _('\u66f4\u65b0\u540e\u81ea\u52a8\u5e94\u7528\uff08\u5b9e\u9a8c\uff09'))
 				]) : ''
 			])
 		]),
@@ -462,7 +479,7 @@ function artifactStatusPanel() {
 			]),
 			E('div', {}, [
 				E('strong', {}, _('更新时间')),
-				E('div', {}, valueText(state.pending_updated_at || state.last_good_mtime))
+				E('div', {}, shinraTime.formatMaybeTime(state.pending_updated_at || state.last_good_mtime))
 			])
 		])
 	]);

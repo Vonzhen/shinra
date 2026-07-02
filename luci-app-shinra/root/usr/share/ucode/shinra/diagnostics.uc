@@ -150,6 +150,7 @@ function diagnostics_get(trace_id, req) {
 				runtime_config: file_status(PATH.RUNTIME_CONFIG),
 				runtime_backup: file_status(PATH.RUNTIME_CONFIG_BAK),
 				runtime_state: file_status(PATH.RUNTIME_STATE),
+				auto_apply_state: file_status(PATH.AUTO_APPLY_STATE),
 				last_error: file_status(PATH.LAST_ERROR)
 			}
 		}, 200, trace_id, "Diagnostics loaded");

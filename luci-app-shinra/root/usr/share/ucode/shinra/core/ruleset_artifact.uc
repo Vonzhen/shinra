@@ -27,7 +27,7 @@ function safe_tag(tag) {
 		let ok = (ch >= "a" && ch <= "z") ||
 			(ch >= "A" && ch <= "Z") ||
 			(ch >= "0" && ch <= "9") ||
-			ch == "." || ch == "_" || ch == "-";
+			ch == "." || ch == "_" || ch == "-" || ch == "!";
 		if (!ok)
 			die("Invalid Rule Set tag: " + tag);
 	}

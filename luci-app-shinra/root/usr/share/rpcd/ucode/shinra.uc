@@ -4,7 +4,7 @@ import { Success, Fail } from 'shinra.core.result';
 import { ERR } from 'shinra.core.error';
 import { init as gen_trace_id } from 'shinra.core.trace';
 import { get_profile, profile_source_get, profile_source_save, profile_sync_remote, validate_profile, save_profile, restore_default_profile, rollback_profile } from 'shinra.profile';
-import { subscriptions_get, subscriptions_save, subscriptions_refresh, subscriptions_refresh_start, subscriptions_refresh_status, node_snapshot_get, node_snapshot_summary, subscription_test_source, subscription_fetch_preflight } from 'shinra.subscription';
+import { subscriptions_get, subscriptions_save, subscriptions_refresh, subscription_refresh_source, subscriptions_refresh_start, subscription_refresh_source_start, subscriptions_refresh_status, node_snapshot_get, node_snapshot_summary, subscription_test_source, subscription_fetch_preflight } from 'shinra.subscription';
 import { runtime_status, runtime_start, runtime_stop, runtime_restart } from 'shinra.runtime';
 import { generate_candidate, check_candidate } from 'shinra.generator';
 import { config_apply, config_rollback, runtime_healthcheck } from 'shinra.apply';
@@ -152,6 +152,18 @@ const methods = {
 		}
 	},
 
+	subscription_refresh_source: {
+		args: {
+			source_id: "",
+			id: "",
+			strategy: ""
+		},
+		call: function(req) {
+			let trace_id = gen_trace_id();
+			return gateway(trace_id, subscription_refresh_source, req);
+		}
+	},
+
 	subscriptions_refresh_start: {
 		args: {
 			strategy: ""
@@ -159,6 +171,19 @@ const methods = {
 		call: function(req) {
 			let trace_id = gen_trace_id();
 			return gateway(trace_id, subscriptions_refresh_start, req);
+		}
+	},
+
+	subscription_refresh_source_start: {
+		args: {
+			source_id: "",
+			id: "",
+			strategy: "",
+			notify_intent: false
+		},
+		call: function(req) {
+			let trace_id = gen_trace_id();
+			return gateway(trace_id, subscription_refresh_source_start, req);
 		}
 	},
 

@@ -195,7 +195,7 @@ function trigger_subscription(trace_id, strategy) {
 }
 
 function trigger_ruleset(trace_id) {
-	return ruleset_download_required_start(trace_id, { notify_intent: true });
+	return ruleset_download_required_start(trace_id, { notify_intent: true, scheduler_intent: true, auto_apply_intent: true });
 }
 
 function evaluate_hourly(state, task_type, task, enabled, scheduled_hour, now, run_key, time_ok, trigger_fn) {

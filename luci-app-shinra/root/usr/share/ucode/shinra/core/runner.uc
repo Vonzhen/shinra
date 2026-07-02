@@ -9,7 +9,7 @@ import { PATH } from 'shinra.core.constants';
 import { json_escape, json_stringify, read_optional_text, write_text_atomic, ExecResult } from 'shinra.core.utils';
 import { start_task, running_task, fail_task } from 'shinra.core.task';
 import { ruleset_download_required, ruleset_download_one } from 'shinra.ruleset';
-import { subscriptions_refresh } from 'shinra.subscription';
+import { subscriptions_refresh, subscription_refresh_source } from 'shinra.subscription';
 import { notify_result_best_effort } from 'shinra.notify';
 
 function ensure_dir(path) {
@@ -60,7 +60,8 @@ function runner_log(task_type, trace_id, level, message) {
 function allowed_target(task_type, target) {
 	return (task_type == "ruleset.sync" && target == "ruleset_download_required") ||
 		(task_type == "ruleset.download_one" && target == "ruleset_download_one") ||
-		(task_type == "subscription.refresh" && target == "subscriptions_refresh");
+		(task_type == "subscription.refresh" && target == "subscriptions_refresh") ||
+		(task_type == "subscription.refresh" && target == "subscription_refresh_source");
 }
 
 function execute_target(task_type, target, trace_id, req) {
@@ -68,11 +69,13 @@ function execute_target(task_type, target, trace_id, req) {
 		die("Runner target is not allowed: " + task_type + " " + target);
 
 	if (task_type == "ruleset.sync" && target == "ruleset_download_required")
-		return ruleset_download_required(trace_id, {});
+		return ruleset_download_required(trace_id, req || {});
 	if (task_type == "ruleset.download_one" && target == "ruleset_download_one")
 		return ruleset_download_one(trace_id, req || {});
 	if (task_type == "subscription.refresh" && target == "subscriptions_refresh")
 		return subscriptions_refresh(trace_id, req || {});
+	if (task_type == "subscription.refresh" && target == "subscription_refresh_source")
+		return subscription_refresh_source(trace_id, req || {});
 
 	die("Runner target is not implemented: " + task_type + " " + target);
 }
