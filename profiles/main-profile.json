@@ -46,6 +46,7 @@
     { "type": "selector", "tag": "📽️ TikTok", "x_rule": "all_regions", "interrupt_exist_connections": true, "outbounds": ["🗽 节点选择"] },
     { "type": "selector", "tag": "🛩️ Telegram", "x_rule": "all_regions", "interrupt_exist_connections": true, "outbounds": ["🗽 节点选择"] },
     { "type": "selector", "tag": "🅾️ OpenAI", "x_rule": "region:US", "interrupt_exist_connections": true, "outbounds": ["🗽 节点选择"] },
+    { "type": "selector", "tag": "💰 Crypto", "x_rule": "region:SG,TW", "interrupt_exist_connections": true, "outbounds": ["🗽 节点选择"] },
     { "type": "selector", "tag": "🍎 Apple", "x_rule": "keep", "interrupt_exist_connections": true, "outbounds": ["🗽 节点选择", "🎯 全球直连"] },
     { "type": "selector", "tag": "🐧 Tencent", "x_rule": "keep", "interrupt_exist_connections": true, "outbounds": ["🗽 节点选择", "🎯 全球直连"] },
     { "type": "selector", "tag": "🐟 漏网之鱼", "x_rule": "keep", "interrupt_exist_connections": true, "outbounds": ["🗽 节点选择"] },
@@ -72,6 +73,7 @@
       { "rule_set": ["geosite-tiktok"], "outbound": "📽️ TikTok" },
       { "rule_set": ["geosite-privateemby"], "outbound": "🎞 Emby" },
       { "rule_set": ["geosite-telegram", "geoip-telegram"], "outbound": "🛩️ Telegram" },
+      { "rule_set": ["geosite-binance", "geosite-okx", "geosite-bybit"], "outbound": "💰 Crypto" },
       { "rule_set": ["geosite-cn", "geoip-cn", "geosite-privatedirect"], "outbound": "🎯 全球直连" },
       { "rule_set": ["geosite-geolocation-!cn"], "outbound": "🗽 节点选择" }
     ],
@@ -100,6 +102,9 @@
       { "tag": "geosite-category-ads-all", "type": "remote", "url": "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geosite/category-ads-all.srs", "format": "binary" },
       { "tag": "geoip-cn", "type": "remote", "url": "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geoip/cn.srs", "format": "binary" },
       { "tag": "geosite-cn", "type": "remote", "url": "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geosite/cn.srs", "format": "binary" },
+      { "tag": "geosite-binance", "type": "remote", "url": "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geosite/binance.srs", "format": "binary" },
+      { "tag": "geosite-okx", "type": "remote", "url": "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geosite/okx.srs", "format": "binary" },
+      { "tag": "geosite-bybit", "type": "remote", "url": "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geosite/bybit.srs", "format": "binary" },  
       { "tag": "geosite-geolocation-!cn", "type": "remote", "url": "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geosite/geolocation-!cn.srs", "format": "binary" }
     ],
     "default_http_client": "global-downloader",
