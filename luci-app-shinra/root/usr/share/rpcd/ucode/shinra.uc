@@ -176,7 +176,8 @@ const methods = {
 
 	subscriptions_refresh_start: {
 		args: {
-			strategy: ""
+			strategy: "",
+			notify_intent: false
 		},
 		call: function(req) {
 			let trace_id = gen_trace_id();
@@ -198,7 +199,9 @@ const methods = {
 	},
 
 	subscriptions_refresh_status: {
-		args: {},
+		args: {
+			run_id: ""
+		},
 		call: function(req) {
 			let trace_id = gen_trace_id();
 			return gateway(trace_id, subscriptions_refresh_status, req);

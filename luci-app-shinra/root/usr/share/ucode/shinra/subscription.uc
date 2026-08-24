@@ -22,6 +22,23 @@ function append_outbounds(target, outbounds) {
 		push(target, outbound);
 }
 
+function refresh_run_id(req) {
+	if (type(req) == "object" && req != null && type(req.run_id) == "string")
+		return req.run_id;
+	return "";
+}
+
+function refresh_source_result(source) {
+	return {
+		id: type(source.id) == "string" ? source.id : "",
+		name: type(source.name) == "string" ? source.name : "",
+		status: type(source.status) == "string" ? source.status : "",
+		ok: source.ok == true,
+		node_count: type(source.node_count) == "int" ? source.node_count : 0,
+		error: type(source.error) == "string" ? source.error : ""
+	};
+}
+
 function refresh_source_safely(trace_id, source, strategy, old_snapshot) {
 	let old_outbounds = old_outbounds_for_source(old_snapshot, source.id);
 	let old_count = length(old_outbounds);
@@ -362,9 +379,11 @@ function subscription_fetch_preflight(trace_id, req) {
 
 function subscriptions_refresh_selected(trace_id, req, target_source_id) {
 	let lock = null;
+	let run_id = "";
 	try {
 		let config = validate_subscriptions_content(read_text(PATH.SUBSCRIPTIONS));
 		let strategy = refresh_strategy(config, req);
+		run_id = refresh_run_id(req);
 		let target_count = target_source_count(config, target_source_id);
 		lock = lock_acquire("subscription", trace_id);
 
@@ -381,8 +400,9 @@ function subscriptions_refresh_selected(trace_id, req, target_source_id) {
 		let preserved_sources = 0;
 		let failed_sources = 0;
 		let last_error = "";
+		let source_results = [];
 
-		write_subscription_refresh_task(trace_id, {
+		write_subscription_refresh_task(trace_id, run_id, {
 			status: "running",
 			message: "Subscription refresh running",
 			total_count: target_count,
@@ -395,10 +415,12 @@ function subscriptions_refresh_selected(trace_id, req, target_source_id) {
 			current_item: "",
 			last_error: "",
 			meta: {
+				run_id: run_id,
 				refresh_strategy: strategy,
 				source_name: "",
 				current_url_redacted: "",
-				node_count: 0
+				node_count: 0,
+				source_results: source_results
 			},
 			trace_id: trace_id
 		});
@@ -413,7 +435,7 @@ function subscriptions_refresh_selected(trace_id, req, target_source_id) {
 				continue;
 			}
 
-			write_subscription_refresh_task(trace_id, {
+			write_subscription_refresh_task(trace_id, run_id, {
 				status: "running",
 				message: "Subscription refresh running",
 				total_count: target_count,
@@ -433,6 +455,7 @@ function subscriptions_refresh_selected(trace_id, req, target_source_id) {
 			});
 
 			let result = refresh_source_safely(trace_id, source, strategy, old_snapshot);
+			push(source_results, refresh_source_result(result.source));
 			push(sources, result.source);
 			append_outbounds(outbounds, result.outbounds);
 			total = total + length(result.outbounds);
@@ -445,7 +468,7 @@ function subscriptions_refresh_selected(trace_id, req, target_source_id) {
 				last_error = result.source.error || last_error;
 			}
 			completed = completed + 1;
-			write_subscription_refresh_task(trace_id, {
+			write_subscription_refresh_task(trace_id, run_id, {
 				completed_count: completed,
 				updated_count: total,
 				unchanged_count: preserved_sources,
@@ -460,7 +483,8 @@ function subscriptions_refresh_selected(trace_id, req, target_source_id) {
 					source_name: source.name || "",
 					current_url_redacted: redacted_url(source.url),
 					node_count: total,
-					source_status: result.source.status || ""
+					source_status: result.source.status || "",
+					source_results: source_results
 				}
 			});
 		}
@@ -497,6 +521,7 @@ function subscriptions_refresh_selected(trace_id, req, target_source_id) {
 				current_item: "",
 				last_error: last_error,
 				meta: {
+					run_id: run_id,
 					refresh_strategy: strategy,
 					source_id: target_source_id,
 					source_name: "",
@@ -505,7 +530,8 @@ function subscriptions_refresh_selected(trace_id, req, target_source_id) {
 					updated_sources: updated_sources,
 					preserved_sources: preserved_sources,
 					failed_sources: failed_sources,
-					target_source_id: target_source_id
+					target_source_id: target_source_id,
+					source_results: source_results
 				}
 			});
 		}
@@ -526,9 +552,11 @@ function subscriptions_refresh_selected(trace_id, req, target_source_id) {
 		let err = "" + e;
 		if (subscription_refresh_task_enabled(trace_id)) {
 			try {
-				fail_task(SUBSCRIPTION_REFRESH_TASK, trace_id, err, {
-					message: "Failed to refresh Subscriptions"
-				});
+				if (run_id != "")
+					fail_task(SUBSCRIPTION_REFRESH_TASK, trace_id, err, {
+						message: "Failed to refresh Subscriptions",
+						meta: { run_id: run_id }
+					});
 			} catch (task_error) {
 				let ignored = "" + task_error;
 			}
