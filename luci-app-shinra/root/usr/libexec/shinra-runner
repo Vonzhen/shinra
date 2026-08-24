@@ -18,12 +18,15 @@ LOCK=""
 case "${TASK_TYPE}:${TARGET}" in
 	ruleset.sync:ruleset_download_required)
 		LOCK="${RUNNER_DIR}/ruleset.sync.lock"
+		RUN_ID="${7:-}"
 		;;
 	ruleset.download_one:ruleset_download_one)
 		LOCK="${RUNNER_DIR}/ruleset.download_one.lock"
 		TAG="${4:-}"
 		STRATEGY=""
 		NOTIFY="${5:-}"
+		AUTO_APPLY="${6:-}"
+		RUN_ID="${7:-}"
 		;;
 	subscription.refresh:subscriptions_refresh)
 		LOCK="${RUNNER_DIR}/subscription.refresh.lock"
@@ -72,7 +75,7 @@ if [ "$TARGET" = "subscription_refresh_source" ] && [ -z "$SOURCE_ID" ]; then
 	exit 2
 fi
 
-if [ "$TASK_TYPE" = "subscription.refresh" ] && [ -z "$RUN_ID" ]; then
+if [ -z "$RUN_ID" ]; then
 	exit 2
 fi
 
@@ -108,23 +111,22 @@ esac
 mkdir -p "$RUN_DIR" "$RUNNER_DIR"
 
 LOCK_PRECLAIMED=0
-if [ "$TASK_TYPE" = "subscription.refresh" ]; then
-	if [ ! -f "$LOCK/run_id" ] || [ "$(cat "$LOCK/run_id" 2>/dev/null)" != "$RUN_ID" ]; then
-		exit 0
-	fi
-	LOCK_PRECLAIMED=1
-elif ! mkdir "$LOCK" 2>/dev/null; then
+if [ ! -f "$LOCK/run_id" ] || [ "$(cat "$LOCK/run_id" 2>/dev/null)" != "$RUN_ID" ]; then
 	exit 0
 fi
+LOCK_PRECLAIMED=1
 
 cleanup() {
 	if [ "$LOCK_PRECLAIMED" = "1" ]; then
+		rm -f "$LOCK/pid"
 		rm -f "$LOCK/run_id"
 	fi
 	rmdir "$LOCK" 2>/dev/null || true
 }
 
 trap cleanup EXIT INT TERM
+
+printf '%s\n' "$$" > "$LOCK/pid"
 
 ucode -e 'import { runner_execute } from "shinra.runner"; let code = runner_execute("'"$TASK_TYPE"'", "'"$TARGET"'", "'"$TRACE_ID"'", { strategy: "'"$STRATEGY"'", tag: "'"$TAG"'", source_id: "'"$SOURCE_ID"'", run_id: "'"$RUN_ID"'", notify_intent: '"$NOTIFY_INTENT"', scheduler_intent: '"$AUTO_APPLY_INTENT"', auto_apply_intent: '"$AUTO_APPLY_INTENT"' }); if (code != 0) die("runner failed: " + code);'
 exit "$?"

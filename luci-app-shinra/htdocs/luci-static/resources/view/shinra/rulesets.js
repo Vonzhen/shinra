@@ -40,6 +40,7 @@ const callRulesetDownloadRequiredStart = rpc.declare({
 const callRulesetDownloadRequiredStatus = rpc.declare({
 	object: 'shinra',
 	method: 'ruleset_download_required_status',
+	params: [ 'run_id' ],
 	expect: { '': {} }
 });
 
@@ -53,6 +54,7 @@ const callRulesetDownloadOneStart = rpc.declare({
 const callRulesetDownloadOneStatus = rpc.declare({
 	object: 'shinra',
 	method: 'ruleset_download_one_status',
+	params: [ 'run_id' ],
 	expect: { '': {} }
 });
 
@@ -86,6 +88,8 @@ let actionStatusOk = true;
 let actionToken = 0;
 let downloadingTag = '';
 let rulesetListOpen = false;
+let syncingRunId = '';
+let downloadingRunId = '';
 
 function dataOf(result) {
 	if (result && result.ok && result.data)
@@ -638,8 +642,13 @@ function savePolicy() {
 	});
 }
 
-function pollRulesetSync(token, attempt) {
-	return callRulesetDownloadRequiredStatus().then(function(statusResult) {
+function taskStale(task) {
+	const updatedAt = task && task.updated_at ? Date.parse(task.updated_at) : NaN;
+	return Number.isFinite(updatedAt) && Date.now() - updatedAt > 120000;
+}
+
+function pollRulesetSync(token, runId, attempt) {
+	return callRulesetDownloadRequiredStatus(runId).then(function(statusResult) {
 		if (token !== actionToken)
 			return statusResult;
 		notifyFailure(statusResult);
@@ -651,20 +660,21 @@ function pollRulesetSync(token, attempt) {
 		const task = rulesetTaskFrom(statusResult);
 		const taskName = taskDisplayName(statusResult, _('规则集同步任务'));
 		const status = task.status || '';
+		if (!(dataOf(statusResult).matches_run)) {
+			syncingRunId = '';
+			setStatus(_('规则集同步任务已被其他操作替换。'), false);
+			return refreshAll();
+		}
 
 		if (status === 'starting' || status === 'running') {
-			setStatus(rulesetTaskStatusText(task, taskName), true);
-			if (attempt >= 180) {
-				setStatus(_('%s仍在后台运行。稍后返回可查看结果。').format(taskName), true);
-				return refreshAll();
-			}
-
-			return delay(2000).then(function() {
-				return pollRulesetSync(token, attempt + 1);
+			setStatus(taskStale(task) ? _('规则集同步超过两分钟没有更新，仍在等待后台恢复。') : rulesetTaskStatusText(task, taskName), !taskStale(task));
+			return delay(taskStale(task) ? 5000 : 2000).then(function() {
+				return pollRulesetSync(token, runId, attempt + 1);
 			});
 		}
 
 		const ok = status === 'success' || status === 'partial';
+		syncingRunId = '';
 		setStatus(rulesetTaskStatusText(task, taskName), ok && Number(task.failed_count || 0) === 0);
 		return refreshAll();
 	}).catch(function(error) {
@@ -675,8 +685,8 @@ function pollRulesetSync(token, attempt) {
 	});
 }
 
-function pollRulesetDownloadOne(token, attempt) {
-	return callRulesetDownloadOneStatus().then(function(statusResult) {
+function pollRulesetDownloadOne(token, runId, attempt) {
+	return callRulesetDownloadOneStatus(runId).then(function(statusResult) {
 		if (token !== actionToken)
 			return statusResult;
 		notifyFailure(statusResult);
@@ -689,21 +699,22 @@ function pollRulesetDownloadOne(token, attempt) {
 		const task = rulesetTaskFrom(statusResult);
 		const taskName = taskDisplayName(statusResult, _('单个规则集下载任务'));
 		const status = task.status || '';
+		if (!(dataOf(statusResult).matches_run)) {
+			downloadingRunId = '';
+			downloadingTag = '';
+			setStatus(_('单个规则集下载任务已被其他操作替换。'), false);
+			return refreshAll();
+		}
 
 		if (status === 'starting' || status === 'running') {
-			setStatus(rulesetDownloadOneStatusText(task, taskName), true);
-			if (attempt >= 120) {
-				setStatus(_('%s仍在后台运行。稍后返回可查看结果。').format(taskName), true);
-				downloadingTag = '';
-				return refreshAll();
-			}
-
-			return delay(1500).then(function() {
-				return pollRulesetDownloadOne(token, attempt + 1);
+			setStatus(taskStale(task) ? _('单个规则集下载超过两分钟没有更新，仍在等待后台恢复。') : rulesetDownloadOneStatusText(task, taskName), !taskStale(task));
+			return delay(taskStale(task) ? 5000 : 1500).then(function() {
+				return pollRulesetDownloadOne(token, runId, attempt + 1);
 			});
 		}
 
 		downloadingTag = '';
+		downloadingRunId = '';
 		setStatus(rulesetDownloadOneStatusText(task, taskName), status === 'success');
 		return refreshAll();
 	}).catch(function(error) {
@@ -733,8 +744,13 @@ function downloadOneRuleset(tag) {
 		}
 
 		const task = rulesetTaskFrom(startResult);
+		downloadingRunId = dataOf(startResult).run_id || (task.meta && task.meta.run_id) || '';
+		if (!downloadingRunId) {
+			setStatus(_('单个规则集下载任务未返回运行标识。'), false);
+			return refreshAll();
+		}
 		setStatus(rulesetDownloadOneStatusText(task, taskDisplayName(startResult, _('单个规则集下载任务'))), true);
-		return pollRulesetDownloadOne(token, 0);
+		return pollRulesetDownloadOne(token, downloadingRunId, 0);
 	}).catch(function(error) {
 		if (token !== actionToken)
 			return;
@@ -770,8 +786,13 @@ function syncRulesets() {
 		}
 
 		const task = rulesetTaskFrom(startResult);
+		syncingRunId = dataOf(startResult).run_id || (task.meta && task.meta.run_id) || '';
+		if (!syncingRunId) {
+			setStatus(_('规则集同步任务未返回运行标识。'), false);
+			return refreshAll();
+		}
 		setStatus(rulesetTaskStatusText(task, taskDisplayName(startResult, _('规则集同步任务'))), true);
-		return pollRulesetSync(token, 0);
+		return pollRulesetSync(token, syncingRunId, 0);
 	}).catch(function(error) {
 		if (token !== actionToken)
 			return;
@@ -820,7 +841,9 @@ return view.extend({
 		return Promise.all([
 			callRulesetPolicyGet(),
 			callRulesetRequiredInventory(),
-			callRulesetArtifactStatus()
+			callRulesetArtifactStatus(),
+			callRulesetDownloadRequiredStatus(),
+			callRulesetDownloadOneStatus()
 		]);
 	},
 
@@ -828,6 +851,8 @@ return view.extend({
 		const policyResult = results && results[0] ? results[0] : {};
 		const requiredResult = results && results[1] ? results[1] : {};
 		const artifactResult = results && results[2] ? results[2] : {};
+		const syncTaskResult = results && results[3] ? results[3] : {};
+		const downloadTaskResult = results && results[4] ? results[4] : {};
 
 		notifyFailure(policyResult);
 		notifyFailure(requiredResult);
@@ -837,6 +862,21 @@ return view.extend({
 		inventories.required = dataOf(requiredResult);
 		artifactStatus = dataOf(artifactResult);
 
-		return renderPage();
+		const syncTask = rulesetTaskFrom(syncTaskResult);
+		const downloadTask = rulesetTaskFrom(downloadTaskResult);
+		const syncRunId = syncTask.meta && syncTask.meta.run_id || '';
+		const downloadRunId = downloadTask.meta && downloadTask.meta.run_id || '';
+		const page = renderPage();
+		if ((syncTask.status === 'starting' || syncTask.status === 'running') && syncRunId) {
+			syncingRunId = syncRunId;
+			window.setTimeout(function() { pollRulesetSync(actionToken, syncRunId, 0); }, 0);
+		}
+		if ((downloadTask.status === 'starting' || downloadTask.status === 'running') && downloadRunId) {
+			downloadingRunId = downloadRunId;
+			downloadingTag = downloadTask.meta && downloadTask.meta.tag || '';
+			window.setTimeout(function() { pollRulesetDownloadOne(actionToken, downloadRunId, 0); }, 0);
+		}
+
+		return page;
 	}
 });

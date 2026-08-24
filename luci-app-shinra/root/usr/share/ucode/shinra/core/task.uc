@@ -56,6 +56,7 @@ function default_task(task_type) {
 		status: "idle",
 		started_at: "",
 		updated_at: "",
+		updated_at_epoch: 0,
 		finished_at: "",
 		progress: 0,
 		current_item: "",
@@ -94,6 +95,7 @@ function normalize_task(task_type, raw) {
 	task.status = string_field(raw, "status") || "idle";
 	task.started_at = string_field(raw, "started_at");
 	task.updated_at = string_field(raw, "updated_at");
+	task.updated_at_epoch = int_field(raw, "updated_at_epoch");
 	task.finished_at = string_field(raw, "finished_at");
 	task.progress = int_field(raw, "progress");
 	task.current_item = string_field(raw, "current_item");
@@ -122,6 +124,7 @@ function write_task(task) {
 	let task_type = valid_task_type(task.task_type);
 	ensure_task_dir();
 	task.updated_at = now_utc(task.trace_id);
+	task.updated_at_epoch = time();
 	write_text_atomic(task_path(task_type), json_stringify(normalize_task(task_type, task)) + "\n");
 	return normalize_task(task_type, task);
 }
@@ -156,6 +159,7 @@ function start_task(task_type, trace_id, message, patch) {
 	task.status = "starting";
 	task.started_at = now_utc(trace_id);
 	task.updated_at = task.started_at;
+	task.updated_at_epoch = time();
 	task.finished_at = "";
 	task.progress = 0;
 	task.trace_id = trace_id || "";

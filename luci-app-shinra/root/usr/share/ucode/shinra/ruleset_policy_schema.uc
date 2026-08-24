@@ -12,7 +12,7 @@ function default_ruleset_policy() {
 		auto_apply_after_update: false,
 		update_hour: 4,
 		repositories: {
-			"private": "",
+			"private": "https://testingcf.jsdelivr.net/gh/miozen/sing-box-rulesets@master/rules",
 			"public": "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing"
 		}
 	};

@@ -9,6 +9,7 @@ import { Success, Fail } from 'shinra.core.result';
 import { ERR } from 'shinra.core.error';
 import { read_optional_text, file_exists, ExecResult } from 'shinra.core.utils';
 import { observe_runtime } from 'shinra.runtime';
+import { all_task_lock_status, recover_task_lock } from 'shinra.core.task_lock';
 
 function redact_line(line) {
 	let value = "" + line;
@@ -135,6 +136,23 @@ function last_error_get(trace_id, req) {
 	}
 }
 
+function task_locks_get(trace_id, req) {
+	try {
+		return Success({ locks: all_task_lock_status(trace_id) }, 200, trace_id, "Background task locks loaded");
+	} catch (e) {
+		return Fail(ERR.E_DIAGNOSTICS_FAILED, "Failed to load background task locks", trace_id, "" + e);
+	}
+}
+
+function task_lock_recover(trace_id, req) {
+	try {
+		let task_type = type(req) == "object" && req != null && type(req.task_type) == "string" ? req.task_type : "";
+		return Success({ lock: recover_task_lock(trace_id, task_type) }, 200, trace_id, "Recovered stale background task lock");
+	} catch (e) {
+		return Fail(ERR.E_DIAGNOSTICS_FAILED, "Failed to recover background task lock", trace_id, "" + e);
+	}
+}
+
 function diagnostics_get(trace_id, req) {
 	try {
 		let observed = observe_runtime(trace_id);
@@ -160,4 +178,4 @@ function diagnostics_get(trace_id, req) {
 	}
 }
 
-export { logs_get, last_error_get, diagnostics_get };
+export { logs_get, last_error_get, task_locks_get, task_lock_recover, diagnostics_get };

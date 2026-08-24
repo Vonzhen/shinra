@@ -2,4 +2,4 @@
 
 set -u
 
-exec /usr/libexec/shinra-runner ruleset.sync ruleset_download_required shinra-runner-ruleset-sync
+exec ucode -e 'import { ruleset_download_required_start } from "shinra.ruleset"; let result = ruleset_download_required_start("shinra-ruleset-sync-job", {}); if (!result || result.ok != true) die("failed to start Rule Set sync");'

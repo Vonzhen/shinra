@@ -4,17 +4,18 @@
 
 'use strict';
 
-import { mkdir, stat } from 'fs';
+import { mkdir, unlink, rmdir, writefile } from 'fs';
 import { PATH } from 'shinra.core.constants';
 import { Success, Fail } from 'shinra.core.result';
 import { ERR } from 'shinra.core.error';
 import { file_exists } from 'shinra.core.utils';
-import { task_path, read_task, patch_task, running_task } from 'shinra.core.task';
+import { task_path, read_task, patch_task, running_task, start_task, fail_task } from 'shinra.core.task';
 
 const RULESET_SYNC_TASK = "ruleset.sync";
 const RULESET_SYNC_TRACE = "shinra-runner-ruleset-sync";
 const RULESET_DOWNLOAD_ONE_TASK = "ruleset.download_one";
 const RULESET_DOWNLOAD_ONE_TRACE = "shinra-runner-ruleset-download-one";
+let ruleset_run_sequence = 0;
 
 function ruleset_sync_task_meta() {
 	return {
@@ -52,9 +53,22 @@ function progress_percent(done, total) {
 	return int((done * 100) / total);
 }
 
-function write_ruleset_task_progress(trace_id, patch) {
+function task_run_id(task) {
+	if (type(task) != "object" || task == null || type(task.meta) != "object" || task.meta == null)
+		return "";
+	return type(task.meta.run_id) == "string" ? task.meta.run_id : "";
+}
+
+function task_run_writable(task_type, run_id) {
+	let current_run_id = task_run_id(read_task(task_type));
+	return run_id == "" ? current_run_id == "" : current_run_id == run_id;
+}
+
+function write_ruleset_task_progress(trace_id, run_id, patch) {
 	try {
 		if (!ruleset_task_enabled(trace_id))
+			return;
+		if (!task_run_writable(RULESET_SYNC_TASK, run_id))
 			return;
 		if (patch.status == "running")
 			running_task(RULESET_SYNC_TASK, trace_id, patch);
@@ -65,9 +79,11 @@ function write_ruleset_task_progress(trace_id, patch) {
 	}
 }
 
-function write_ruleset_download_one_task_progress(trace_id, patch) {
+function write_ruleset_download_one_task_progress(trace_id, run_id, patch) {
 	try {
 		if (!ruleset_download_one_task_enabled(trace_id))
+			return;
+		if (!task_run_writable(RULESET_DOWNLOAD_ONE_TASK, run_id))
 			return;
 		if (patch.status == "running")
 			running_task(RULESET_DOWNLOAD_ONE_TASK, trace_id, patch);
@@ -81,10 +97,14 @@ function write_ruleset_download_one_task_progress(trace_id, patch) {
 function ruleset_download_required_status(trace_id, req) {
 	try {
 		let path = task_path(RULESET_SYNC_TASK);
+		let task = read_task(RULESET_SYNC_TASK);
+		let run_id = type(req) == "object" && req != null && type(req.run_id) == "string" ? req.run_id : "";
 		return Success({
 			path: path,
 			exists: file_exists(path),
-			task: read_task(RULESET_SYNC_TASK),
+			task: task,
+			requested_run_id: run_id,
+			matches_run: run_id == "" || run_id == task_run_id(task),
 			task_meta: ruleset_sync_task_meta()
 		}, 200, trace_id, "Rule Set sync task status loaded");
 	} catch (e) {
@@ -102,10 +122,14 @@ function request_tag(req) {
 function ruleset_download_one_status(trace_id, req) {
 	try {
 		let path = task_path(RULESET_DOWNLOAD_ONE_TASK);
+		let task = read_task(RULESET_DOWNLOAD_ONE_TASK);
+		let run_id = type(req) == "object" && req != null && type(req.run_id) == "string" ? req.run_id : "";
 		return Success({
 			path: path,
 			exists: file_exists(path),
-			task: read_task(RULESET_DOWNLOAD_ONE_TASK),
+			task: task,
+			requested_run_id: run_id,
+			matches_run: run_id == "" || run_id == task_run_id(task),
 			task_meta: ruleset_download_one_task_meta()
 		}, 200, trace_id, "Rule Set download task status loaded");
 	} catch (e) {
@@ -130,44 +154,59 @@ function safe_shell_arg(value, label) {
 	return value;
 }
 
-function ruleset_download_one_start(trace_id, req) {
+function release_runner_lock(path) {
+	unlink(path + "/run_id");
+	rmdir(path);
+}
+
+function next_run_id(task_type) {
+	ruleset_run_sequence = ruleset_run_sequence + 1;
+	return task_type + "-" + time() + "-" + ruleset_run_sequence;
+}
+
+function start_ruleset_task(trace_id, req, task_type, target, task_meta, runner_args) {
+	let lock_path = "";
 	try {
-		let tag = safe_shell_arg(request_tag(req), "Rule Set tag");
 		if (!file_exists(PATH.RUN_DIR) && !mkdir(PATH.RUN_DIR, 0700))
 			die("Failed to create Run directory: " + PATH.RUN_DIR);
 		if (!file_exists(PATH.RUNNER_DIR) && !mkdir(PATH.RUNNER_DIR, 0700))
 			die("Failed to create Runner directory: " + PATH.RUNNER_DIR);
 
-		let lock_info = stat(PATH.RUNNER_DIR + "/ruleset.download_one.lock");
-		let path = task_path(RULESET_DOWNLOAD_ONE_TASK);
-		let task = read_task(RULESET_DOWNLOAD_ONE_TASK);
-		if (type(lock_info) == "object" && lock_info != null && (task.status == "running" || task.status == "starting")) {
-			return Success({
-				path: path,
-				task: task,
-				task_meta: ruleset_download_one_task_meta(),
-				started: false,
-				reason: "already_running"
-			}, 200, trace_id, "Rule Set download task is already running");
+		let path = task_path(task_type);
+		let task = read_task(task_type);
+		lock_path = PATH.RUNNER_DIR + "/" + task_type + ".lock";
+		if (!mkdir(lock_path, 0700))
+			return Success({ path: path, task: task, started: false, reason: "lock_present" }, 200, trace_id, "Rule Set task is already running");
+
+		let run_id = next_run_id(task_type);
+		if (!writefile(lock_path + "/run_id", run_id + "\n")) {
+			release_runner_lock(lock_path);
+			die("Failed to record Rule Set task run id");
 		}
-
-		let code = system("/usr/libexec/shinra-runner ruleset.download_one ruleset_download_one " + RULESET_DOWNLOAD_ONE_TRACE + " " + tag + " >/dev/null 2>&1 &");
-		if (code != 0)
+		task_meta.run_id = run_id;
+		task = start_task(task_type, task_type == RULESET_SYNC_TASK ? RULESET_SYNC_TRACE : RULESET_DOWNLOAD_ONE_TRACE, "Rule Set task queued", { meta: task_meta });
+		let command = "/usr/libexec/shinra-runner " + task_type + " " + target + " " + task.trace_id + " " + runner_args + " " + run_id;
+		let code = system(command + " >/dev/null 2>&1 &");
+		if (code != 0) {
+			release_runner_lock(lock_path);
+			fail_task(task_type, task.trace_id, "Failed to start /usr/libexec/shinra-runner: " + code, { meta: { run_id: run_id } });
 			die("Failed to start /usr/libexec/shinra-runner: " + code);
+		}
+		return Success({ path: path, task: task, started: true, run_id: run_id }, 202, trace_id, "Rule Set task started");
+	} catch (e) {
+		if (lock_path != "")
+			release_runner_lock(lock_path);
+		return Fail(ERR.E_RULESET_DOWNLOAD_FAILED, "Failed to start Rule Set task", trace_id, "" + e);
+	}
+}
 
-		task = read_task(RULESET_DOWNLOAD_ONE_TASK);
-		task.status = "starting";
-		task.message = "Rule Set download queued";
-		task.trace_id = trace_id;
-		task.current_item = tag;
-		task.total_count = 1;
-		task.meta.tag = tag;
-		return Success({
-			path: path,
-			task: task,
-			task_meta: ruleset_download_one_task_meta(),
-			started: true
-		}, 202, trace_id, "Rule Set download task started");
+function ruleset_download_one_start(trace_id, req) {
+	try {
+		let tag = safe_shell_arg(request_tag(req), "Rule Set tag");
+		let result = start_ruleset_task(trace_id, req, RULESET_DOWNLOAD_ONE_TASK, "ruleset_download_one", { tag: tag, scope: "one" }, tag + " - -");
+		if (result.ok && result.data)
+			result.data.task_meta = ruleset_download_one_task_meta();
+		return result;
 	} catch (e) {
 		let err = "" + e;
 		return Fail(ERR.E_RULESET_DOWNLOAD_FAILED, "Failed to start Rule Set download task", trace_id, err);
@@ -176,44 +215,12 @@ function ruleset_download_one_start(trace_id, req) {
 
 function ruleset_download_required_start(trace_id, req) {
 	try {
-		if (!file_exists(PATH.RUN_DIR) && !mkdir(PATH.RUN_DIR, 0700))
-			die("Failed to create Run directory: " + PATH.RUN_DIR);
-		if (!file_exists(PATH.RUNNER_DIR) && !mkdir(PATH.RUNNER_DIR, 0700))
-			die("Failed to create Runner directory: " + PATH.RUNNER_DIR);
-		let lock_info = stat(PATH.RUNNER_DIR + "/ruleset.sync.lock");
-		let path = task_path(RULESET_SYNC_TASK);
-		let task = read_task(RULESET_SYNC_TASK);
-		if (type(lock_info) == "object" && lock_info != null && (task.status == "running" || task.status == "starting")) {
-			return Success({
-				path: path,
-				task: task,
-				task_meta: ruleset_sync_task_meta(),
-				started: false,
-				reason: "already_running"
-			}, 200, trace_id, "Rule Set sync task is already running");
-		}
-
 		let notify = type(req) == "object" && req != null && req.notify_intent == true;
 		let auto_apply = type(req) == "object" && req != null && req.auto_apply_intent == true;
-		let runner_args = "";
-		if (notify || auto_apply)
-			runner_args = " - " + (notify ? "notify" : "-");
-		if (auto_apply)
-			runner_args = runner_args + " autoapply";
-		let code = system("/usr/libexec/shinra-runner ruleset.sync ruleset_download_required " + RULESET_SYNC_TRACE + runner_args + " >/dev/null 2>&1 &");
-		if (code != 0)
-			die("Failed to start /usr/libexec/shinra-runner: " + code);
-
-		task = read_task(RULESET_SYNC_TASK);
-		task.status = "starting";
-		task.message = "Rule Set sync queued";
-		task.trace_id = trace_id;
-		return Success({
-			path: path,
-			task: task,
-			task_meta: ruleset_sync_task_meta(),
-			started: true
-		}, 202, trace_id, "Rule Set sync task started");
+		let result = start_ruleset_task(trace_id, req, RULESET_SYNC_TASK, "ruleset_download_required", { scope: "all" }, "- " + (notify ? "notify" : "-") + " " + (auto_apply ? "autoapply" : "-"));
+		if (result.ok && result.data)
+			result.data.task_meta = ruleset_sync_task_meta();
+		return result;
 	} catch (e) {
 		let err = "" + e;
 		return Fail(ERR.E_RULESET_DOWNLOAD_FAILED, "Failed to start Rule Set sync task", trace_id, err);
@@ -244,6 +251,7 @@ export {
 	ruleset_task_enabled,
 	ruleset_download_one_task_enabled,
 	progress_percent,
+	task_run_writable,
 	write_ruleset_task_progress,
 	write_ruleset_download_one_task_progress,
 	ruleset_download_required_status,

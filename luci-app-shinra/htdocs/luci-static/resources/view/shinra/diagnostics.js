@@ -23,6 +23,19 @@ const callDiagnosticsGet = rpc.declare({
 	expect: { '': {} }
 });
 
+const callTaskLocksGet = rpc.declare({
+	object: 'shinra',
+	method: 'task_locks_get',
+	expect: { '': {} }
+});
+
+const callTaskLockRecover = rpc.declare({
+	object: 'shinra',
+	method: 'task_lock_recover',
+	params: [ 'task_type' ],
+	expect: { '': {} }
+});
+
 const callConnectivityProbe = rpc.declare({
 	object: 'shinra',
 	method: 'connectivity_probe',
@@ -84,6 +97,7 @@ function loadErrorPanel() {
 		pageResults.connectivity,
 		pageResults.apiStatus,
 		pageResults.lastError,
+		pageResults.taskLocks,
 		pageResults.logs
 	].forEach(function(result) {
 		if (result && !result.ok)
@@ -290,6 +304,7 @@ function controlplanePanel() {
 	const apiStatus = shinraUi.dataOf(pageResults.apiStatus);
 	const official = apiStatus.official_api || {};
 	const clash = apiStatus.clash_api || {};
+	const taskLocks = shinraUi.dataOf(pageResults.taskLocks).locks || [];
 
 	return E('div', {}, [
 		E('div', { 'style': shinraUi.sectionStyle() }, [
@@ -309,6 +324,34 @@ function controlplanePanel() {
 			field(_('Runtime Hash'), runtime.runtime_config_hash || '-'),
 			field(_('最近应用结果'), runtime.last_apply_result || '-'),
 			field(_('检查时间'), shinraTime.formatMaybeTime(runtime.checked_at))
+		]),
+		E('div', { 'style': shinraUi.sectionStyle() }, [
+			shinraUi.sectionTitle(_('后台任务锁')),
+			E('div', {}, taskLocks.map(function(lock) {
+				const detail = lock.exists ? '%s, PID %s, %s'.format(lock.task && lock.task.status || '-', lock.pid || '-', lock.reason || '-') : _('未占用');
+				return E('div', { 'style': 'display: grid; grid-template-columns: minmax(160px, 1fr) minmax(0, 2fr) auto; gap: .75rem; align-items: center; padding: .5rem 0; border-bottom: 1px solid #eef0f3;' }, [
+					E('div', { 'style': 'font-weight: 600;' }, lock.task_type || '-'),
+					E('div', { 'style': shinraUi.mutedStyle() }, detail),
+					lock.recoverable ? E('button', {
+						'class': shinraMotion.buttonClass('btn cbi-button cbi-button-negative'),
+						'click': function(ev) {
+							ev.preventDefault();
+							callTaskLockRecover(lock.task_type).then(function(result) {
+								if (!result || !result.ok)
+									return { ok: false, message: result && (result.message || result.code) || _('恢复失败'), detail: result && (result.detail || result.code) || '' };
+								return callTaskLocksGet();
+							}).then(function(result) {
+								pageResults.taskLocks = result && result.ok ? result : {
+									ok: false,
+									message: result && result.message || _('任务锁恢复失败'),
+									detail: result && result.detail || ''
+								};
+								redraw();
+							});
+						}
+					}, _('释放陈旧锁')) : E('span', {})
+				]);
+			}))
 		]),
 		E('div', { 'style': shinraUi.sectionStyle() }, [
 			shinraUi.sectionTitle(_('控制面文件')),
@@ -370,12 +413,14 @@ return view.extend({
 		return Promise.all([
 			callApiStatus().catch(function(e) { return { ok: false, message: _('API 状态加载失败'), detail: e.message || String(e) }; }),
 			callDiagnosticsGet().catch(function(e) { return { ok: false, message: _('控制面诊断加载失败'), detail: e.message || String(e) }; }),
-			callLastErrorGet().catch(function(e) { return { ok: false, message: _('最近错误加载失败'), detail: e.message || String(e) }; })
+			callLastErrorGet().catch(function(e) { return { ok: false, message: _('最近错误加载失败'), detail: e.message || String(e) }; }),
+			callTaskLocksGet().catch(function(e) { return { ok: false, message: _('任务锁状态加载失败'), detail: e.message || String(e) }; })
 		]).then(function(results) {
 			return {
 				apiStatus: results[0],
 				diagnostics: results[1],
-				lastError: results[2]
+				lastError: results[2],
+				taskLocks: results[3]
 			};
 		});
 	},

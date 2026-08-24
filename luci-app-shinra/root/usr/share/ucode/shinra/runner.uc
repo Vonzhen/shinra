@@ -84,9 +84,7 @@ function notify_enabled(req) {
 	return type(req) == "object" && req != null && req.notify_intent == true;
 }
 
-function subscription_run_matches(task_type, req) {
-	if (task_type != "subscription.refresh")
-		return true;
+function task_run_matches(task_type, req) {
 	if (type(req) != "object" || req == null || type(req.run_id) != "string" || req.run_id == "")
 		return false;
 
@@ -95,11 +93,18 @@ function subscription_run_matches(task_type, req) {
 }
 
 function runner_task_meta(task_type, target, req) {
-	let meta = { runner_target: target };
+	let meta = {
+		runner_target: target,
+		run_id: type(req.run_id) == "string" ? req.run_id : ""
+	};
 	if (task_type == "subscription.refresh") {
-		meta.run_id = type(req.run_id) == "string" ? req.run_id : "";
 		meta.scope = target == "subscription_refresh_source" ? "source" : "all";
 		meta.target_source_id = type(req.source_id) == "string" ? req.source_id : "";
+	} else if (task_type == "ruleset.download_one") {
+		meta.scope = "one";
+		meta.tag = type(req.tag) == "string" ? req.tag : "";
+	} else if (task_type == "ruleset.sync") {
+		meta.scope = "all";
 	}
 	return meta;
 }
@@ -124,8 +129,8 @@ function runner_execute(task_type, target, trace_id, req) {
 	try {
 		if (!allowed_target(task_type, target))
 			die("Runner target is not allowed: " + task_type + " " + target);
-		if (!subscription_run_matches(task_type, req))
-			die("Subscription refresh run is no longer active");
+		if (!task_run_matches(task_type, req))
+			die("Background task run is no longer active");
 
 		ensure_runner_dir();
 		start_task(task_type, trace_id, "Task starting", {

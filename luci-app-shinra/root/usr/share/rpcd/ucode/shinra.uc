@@ -11,7 +11,7 @@ import { config_apply, config_rollback, runtime_healthcheck } from 'shinra.apply
 import { dashboard_overview, dashboard_metrics } from 'shinra.dashboard';
 import { dashboard_source_get, dashboard_source_save, dashboard_status } from 'shinra.dashboard_config';
 import { api_status } from 'shinra.api_status';
-import { logs_get, last_error_get, diagnostics_get } from 'shinra.diagnostics';
+import { logs_get, last_error_get, task_locks_get, task_lock_recover, diagnostics_get } from 'shinra.diagnostics';
 import { selector_list, selector_delay_test, selector_set } from 'shinra.control';
 import { connections_list } from 'shinra.connections';
 import { connectivity_probe } from 'shinra.connectivity';
@@ -476,7 +476,9 @@ const methods = {
 	},
 
 	ruleset_download_required_status: {
-		args: {},
+		args: {
+			run_id: ""
+		},
 		call: function(req) {
 			let trace_id = gen_trace_id();
 			return gateway(trace_id, ruleset_download_required_status, req);
@@ -502,7 +504,9 @@ const methods = {
 	},
 
 	ruleset_download_one_status: {
-		args: {},
+		args: {
+			run_id: ""
+		},
 		call: function(req) {
 			let trace_id = gen_trace_id();
 			return gateway(trace_id, ruleset_download_one_status, req);
@@ -584,6 +588,24 @@ const methods = {
 		call: function(req) {
 			let trace_id = gen_trace_id();
 			return gateway(trace_id, last_error_get, req);
+		}
+	},
+
+	task_locks_get: {
+		args: {},
+		call: function(req) {
+			let trace_id = gen_trace_id();
+			return gateway(trace_id, task_locks_get, req);
+		}
+	},
+
+	task_lock_recover: {
+		args: {
+			task_type: ""
+		},
+		call: function(req) {
+			let trace_id = gen_trace_id();
+			return gateway(trace_id, task_lock_recover, req);
 		}
 	},
 
