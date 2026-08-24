@@ -4,15 +4,17 @@
 
 'use strict';
 
-import { mkdir, stat } from 'fs';
+import { mkdir, stat, unlink, rmdir, writefile } from 'fs';
 import { PATH } from 'shinra.core.constants';
 import { Success, Fail } from 'shinra.core.result';
 import { ERR } from 'shinra.core.error';
 import { validate_refresh_strategy } from 'shinra.subscription_policy_schema';
-import { task_path, read_task, patch_task, running_task } from 'shinra.core.task';
+import { task_path, read_task, patch_task, running_task, start_task, fail_task } from 'shinra.core.task';
 
 const SUBSCRIPTION_REFRESH_TASK = "subscription.refresh";
 const SUBSCRIPTION_REFRESH_TRACE = "shinra-runner-subscription-refresh";
+const SUBSCRIPTION_REFRESH_LOCK = "subscription.refresh.lock";
+let refresh_run_sequence = 0;
 
 function subscription_refresh_task_meta() {
 	return {
@@ -58,9 +60,17 @@ function redacted_url(url) {
 	return scheme + host + "/...";
 }
 
-function write_subscription_refresh_task(trace_id, patch) {
+function task_run_id(task) {
+	if (type(task) != "object" || task == null || type(task.meta) != "object" || task.meta == null)
+		return "";
+	return type(task.meta.run_id) == "string" ? task.meta.run_id : "";
+}
+
+function write_subscription_refresh_task(trace_id, run_id, patch) {
 	try {
 		if (!subscription_refresh_task_enabled(trace_id))
+			return;
+		if (run_id == "" || task_run_id(read_task(SUBSCRIPTION_REFRESH_TASK)) != run_id)
 			return;
 		if (patch.status == "running")
 			running_task(SUBSCRIPTION_REFRESH_TASK, trace_id, patch);
@@ -74,6 +84,22 @@ function write_subscription_refresh_task(trace_id, patch) {
 function path_exists(path) {
 	let info = stat(path);
 	return type(info) == "object" && info != null;
+}
+
+function refresh_lock_path() {
+	return PATH.RUNNER_DIR + "/" + SUBSCRIPTION_REFRESH_LOCK;
+}
+
+function release_refresh_lock(path) {
+	if (type(path) != "string" || path == "")
+		return;
+	unlink(path + "/run_id");
+	rmdir(path);
+}
+
+function next_refresh_run_id() {
+	refresh_run_sequence = refresh_run_sequence + 1;
+	return "subscription-refresh-" + time() + "-" + refresh_run_sequence;
 }
 
 function source_arg(req, key) {
@@ -118,10 +144,14 @@ function shell_safe_token(value, label) {
 function subscriptions_refresh_status(trace_id, req) {
 	try {
 		let path = task_path(SUBSCRIPTION_REFRESH_TASK);
+		let task = read_task(SUBSCRIPTION_REFRESH_TASK);
+		let requested_run_id = source_arg(req, "run_id");
 		return Success({
 			path: path,
 			exists: path_exists(path),
-			task: read_task(SUBSCRIPTION_REFRESH_TASK),
+			task: task,
+			requested_run_id: requested_run_id,
+			matches_run: requested_run_id == "" || requested_run_id == task_run_id(task),
 			task_meta: subscription_refresh_task_meta()
 		}, 200, trace_id, "Subscription refresh task status loaded");
 	} catch (e) {
@@ -130,7 +160,8 @@ function subscriptions_refresh_status(trace_id, req) {
 	}
 }
 
-function subscriptions_refresh_start(trace_id, req) {
+function start_refresh_task(trace_id, req, source_id) {
+	let lock_path = "";
 	try {
 		if (!path_exists(PATH.RUN_DIR) && !mkdir(PATH.RUN_DIR, 0700))
 			die("Failed to create Run directory: " + PATH.RUN_DIR);
@@ -138,10 +169,10 @@ function subscriptions_refresh_start(trace_id, req) {
 			die("Failed to create Runner directory: " + PATH.RUNNER_DIR);
 
 		let strategy = subscription_refresh_runner_strategy(req);
-		let lock_info = stat(PATH.RUNNER_DIR + "/subscription.refresh.lock");
 		let path = task_path(SUBSCRIPTION_REFRESH_TASK);
 		let task = read_task(SUBSCRIPTION_REFRESH_TASK);
-		if (type(lock_info) == "object" && lock_info != null) {
+		lock_path = refresh_lock_path();
+		if (!mkdir(lock_path, 0700)) {
 			return Success({
 				path: path,
 				task: task,
@@ -151,81 +182,64 @@ function subscriptions_refresh_start(trace_id, req) {
 			}, 200, trace_id, "Subscription refresh task is already running");
 		}
 
-		let command = "/usr/libexec/shinra-runner subscription.refresh subscriptions_refresh " + SUBSCRIPTION_REFRESH_TRACE;
-		if (strategy != "")
-			command = command + " " + strategy;
-		else if (notify_intent_arg(req) != "")
-			command = command + " -";
-		command = command + notify_intent_arg(req);
-		let code = system(command + " >/dev/null 2>&1 &");
-		if (code != 0)
-			die("Failed to start /usr/libexec/shinra-runner: " + code);
-
-		task = read_task(SUBSCRIPTION_REFRESH_TASK);
-		task.status = "starting";
-		task.message = "Subscription refresh queued";
-		task.trace_id = trace_id;
-		return Success({
-			path: path,
-			task: task,
-			task_meta: subscription_refresh_task_meta(),
-			started: true
-		}, 202, trace_id, "Subscription refresh task started");
-	} catch (e) {
-		let err = "" + e;
-		return Fail(ERR.E_SUBSCRIPTION_FETCH_FAILED, "Failed to start Subscription refresh task", trace_id, err);
-	}
-}
-
-function subscription_refresh_source_start(trace_id, req) {
-	try {
-		if (!path_exists(PATH.RUN_DIR) && !mkdir(PATH.RUN_DIR, 0700))
-			die("Failed to create Run directory: " + PATH.RUN_DIR);
-		if (!path_exists(PATH.RUNNER_DIR) && !mkdir(PATH.RUNNER_DIR, 0700))
-			die("Failed to create Runner directory: " + PATH.RUNNER_DIR);
-
-		let source_id = source_arg(req, "source_id");
-		if (source_id == "")
-			source_id = source_arg(req, "id");
-		source_id = shell_safe_token(source_id, "source_id");
-		let strategy = subscription_refresh_runner_strategy(req);
-		let lock_info = stat(PATH.RUNNER_DIR + "/subscription.refresh.lock");
-		let path = task_path(SUBSCRIPTION_REFRESH_TASK);
-		let task = read_task(SUBSCRIPTION_REFRESH_TASK);
-		if (type(lock_info) == "object" && lock_info != null) {
-			return Success({
-				path: path,
-				task: task,
-				task_meta: subscription_refresh_task_meta(),
-				started: false,
-				reason: "lock_present"
-			}, 200, trace_id, "Subscription refresh task is already running");
+		let run_id = next_refresh_run_id();
+		let scope = source_id == "" ? "all" : "source";
+		let runner_target = scope == "all" ? "subscriptions_refresh" : "subscription_refresh_source";
+		let strategy_arg = strategy != "" ? strategy : "-";
+		let notify_arg = notify_intent_arg(req) != "" ? "notify" : "-";
+		if (!writefile(lock_path + "/run_id", run_id + "\n")) {
+			release_refresh_lock(lock_path);
+			die("Failed to record Subscription refresh run id");
 		}
+		task = start_task(SUBSCRIPTION_REFRESH_TASK, SUBSCRIPTION_REFRESH_TRACE, "Subscription refresh queued", {
+			meta: {
+				run_id: run_id,
+				scope: scope,
+				target_source_id: source_id,
+				refresh_strategy: strategy != "" ? strategy : "saved",
+				source_results: []
+			}
+		});
 
-		let command = "/usr/libexec/shinra-runner subscription.refresh subscription_refresh_source " + SUBSCRIPTION_REFRESH_TRACE + " " + source_id;
-		if (strategy != "")
-			command = command + " " + strategy;
-		else if (notify_intent_arg(req) != "")
-			command = command + " -";
-		command = command + notify_intent_arg(req);
+		let command = "/usr/libexec/shinra-runner subscription.refresh " + runner_target + " " + SUBSCRIPTION_REFRESH_TRACE;
+		if (scope == "source")
+			command = command + " " + source_id;
+		command = command + " " + run_id + " " + strategy_arg + " " + notify_arg;
 		let code = system(command + " >/dev/null 2>&1 &");
-		if (code != 0)
+		if (code != 0) {
+			release_refresh_lock(lock_path);
+			fail_task(SUBSCRIPTION_REFRESH_TASK, SUBSCRIPTION_REFRESH_TRACE, "Failed to start /usr/libexec/shinra-runner: " + code, {
+				meta: { run_id: run_id }
+			});
 			die("Failed to start /usr/libexec/shinra-runner: " + code);
-
-		task = read_task(SUBSCRIPTION_REFRESH_TASK);
-		task.status = "starting";
-		task.message = "Subscription source refresh queued";
-		task.trace_id = trace_id;
-		if (type(task.meta) != "object" || task.meta == null || type(task.meta) == "array")
-			task.meta = {};
-		task.meta.source_id = source_id;
+		}
 		return Success({
 			path: path,
 			task: task,
 			task_meta: subscription_refresh_task_meta(),
 			started: true,
+			run_id: run_id,
+			scope: scope,
 			source_id: source_id
-		}, 202, trace_id, "Subscription source refresh task started");
+		}, 202, trace_id, "Subscription refresh task started");
+	} catch (e) {
+		if (lock_path != "")
+			release_refresh_lock(lock_path);
+		let err = "" + e;
+		return Fail(ERR.E_SUBSCRIPTION_FETCH_FAILED, "Failed to start Subscription refresh task", trace_id, err);
+	}
+}
+
+function subscriptions_refresh_start(trace_id, req) {
+	return start_refresh_task(trace_id, req, "");
+}
+
+function subscription_refresh_source_start(trace_id, req) {
+	try {
+		let source_id = source_arg(req, "source_id");
+		if (source_id == "")
+			source_id = source_arg(req, "id");
+		return start_refresh_task(trace_id, req, shell_safe_token(source_id, "source_id"));
 	} catch (e) {
 		let err = "" + e;
 		return Fail(ERR.E_SUBSCRIPTION_FETCH_FAILED, "Failed to start Subscription source refresh task", trace_id, err);

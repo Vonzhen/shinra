@@ -7,7 +7,7 @@
 import { mkdir, stat } from 'fs';
 import { PATH } from 'shinra.core.constants';
 import { json_escape, json_stringify, read_optional_text, write_text_atomic, ExecResult } from 'shinra.core.utils';
-import { start_task, running_task, fail_task } from 'shinra.core.task';
+import { start_task, running_task, fail_task, read_task } from 'shinra.core.task';
 import { ruleset_download_required, ruleset_download_one } from 'shinra.ruleset';
 import { subscriptions_refresh, subscription_refresh_source } from 'shinra.subscription';
 import { notify_result_best_effort } from 'shinra.notify';
@@ -84,6 +84,26 @@ function notify_enabled(req) {
 	return type(req) == "object" && req != null && req.notify_intent == true;
 }
 
+function subscription_run_matches(task_type, req) {
+	if (task_type != "subscription.refresh")
+		return true;
+	if (type(req) != "object" || req == null || type(req.run_id) != "string" || req.run_id == "")
+		return false;
+
+	let task = read_task(task_type);
+	return type(task.meta) == "object" && task.meta != null && task.meta.run_id == req.run_id;
+}
+
+function runner_task_meta(task_type, target, req) {
+	let meta = { runner_target: target };
+	if (task_type == "subscription.refresh") {
+		meta.run_id = type(req.run_id) == "string" ? req.run_id : "";
+		meta.scope = target == "subscription_refresh_source" ? "source" : "all";
+		meta.target_source_id = type(req.source_id) == "string" ? req.source_id : "";
+	}
+	return meta;
+}
+
 function notify_result(task_type, trace_id, result, req) {
 	if (!notify_enabled(req))
 		return;
@@ -104,20 +124,18 @@ function runner_execute(task_type, target, trace_id, req) {
 	try {
 		if (!allowed_target(task_type, target))
 			die("Runner target is not allowed: " + task_type + " " + target);
+		if (!subscription_run_matches(task_type, req))
+			die("Subscription refresh run is no longer active");
 
 		ensure_runner_dir();
 		start_task(task_type, trace_id, "Task starting", {
-			meta: {
-				runner_target: target
-			}
+			meta: runner_task_meta(task_type, target, req)
 		});
 		runner_log(task_type, trace_id, "info", "runner starting");
 		running_task(task_type, trace_id, {
 			status: "running",
 			message: "Task running",
-			meta: {
-				runner_target: target
-			}
+			meta: runner_task_meta(task_type, target, req)
 		});
 
 		let result = execute_target(task_type, target, trace_id, req);

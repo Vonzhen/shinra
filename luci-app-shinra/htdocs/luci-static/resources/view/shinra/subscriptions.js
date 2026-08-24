@@ -18,13 +18,6 @@ const callSubscriptionsSave = rpc.declare({
 	expect: { '': {} }
 });
 
-const callSubscriptionsRefresh = rpc.declare({
-	object: 'shinra',
-	method: 'subscriptions_refresh',
-	params: [ 'strategy' ],
-	expect: { '': {} }
-});
-
 const callSubscriptionRefreshSourceStart = rpc.declare({
 	object: 'shinra',
 	method: 'subscription_refresh_source_start',
@@ -35,6 +28,14 @@ const callSubscriptionRefreshSourceStart = rpc.declare({
 const callSubscriptionsRefreshStatus = rpc.declare({
 	object: 'shinra',
 	method: 'subscriptions_refresh_status',
+	params: [ 'run_id' ],
+	expect: { '': {} }
+});
+
+const callSubscriptionsRefreshStart = rpc.declare({
+	object: 'shinra',
+	method: 'subscriptions_refresh_start',
+	params: [ 'strategy' ],
 	expect: { '': {} }
 });
 
@@ -264,8 +265,41 @@ function checked(id) {
 	return el ? !!el.checked : false;
 }
 
-function setStatus(message, ok) {
+function activeRefresh() {
+	return window.shinraSubscriptionRefresh && typeof window.shinraSubscriptionRefresh === 'object' ? window.shinraSubscriptionRefresh : null;
+}
+
+function refreshStatusDone(status) {
+	return [ 'success', 'partial', 'failed_preserved', 'failed_no_snapshot', 'failed' ].indexOf(status || '') >= 0;
+}
+
+function refreshInProgress() {
+	let refresh = activeRefresh();
+	return !!(refresh && refresh.run_id && !refreshStatusDone(refresh.task && refresh.task.status));
+}
+
+function updateRefreshControls() {
+	let disabled = refreshInProgress();
+	let button = document.getElementById('shinra-refresh-all');
+	if (button)
+		button.disabled = disabled;
+}
+
+function setActiveRefresh(refresh) {
+	window.shinraSubscriptionRefresh = refresh || null;
+	updateRefreshControls();
+}
+
+function setStatus(message, ok, refreshRunId) {
+	let refresh = activeRefresh();
+	if (refreshInProgress() && refreshRunId !== refresh.run_id)
+		return;
 	shinraUi.paintStatus('shinra-subscriptions-status', message || '', ok ? 'ok' : 'error');
+}
+
+function setRefreshStatus(message, ok) {
+	let refresh = activeRefresh();
+	setStatus(message, ok, refresh && refresh.run_id || '');
 }
 
 function taskMetaOf(result) {
@@ -346,6 +380,34 @@ function sourceStatusMap(summary) {
 	return map;
 }
 
+function refreshResultForSource(source) {
+	let refresh = activeRefresh();
+	if (!refresh || !refresh.task)
+		return null;
+
+	let task = refresh.task;
+	let meta = task.meta && typeof task.meta === 'object' ? task.meta : {};
+	let results = Array.isArray(meta.source_results) ? meta.source_results : [];
+	for (let i = 0; i < results.length; i++) {
+		if (results[i] && results[i].id === source.id)
+			return results[i];
+	}
+
+	if (!refreshStatusDone(task.status) && ((meta.source_id && meta.source_id === source.id) || task.current_item === source.name))
+		return { status: 'running', node_count: 0, error: '' };
+	return null;
+}
+
+function refreshResultText(result) {
+	if (!result)
+		return '';
+	if (result.status === 'running')
+		return _('正在刷新...');
+	if (result.ok)
+		return _('刷新完成：%d 个节点。').format(result.node_count || 0);
+	return _('刷新失败，已保留 %d 个节点。').format(result.node_count || 0);
+}
+
 function matrixId(index, field, region) {
 	return 'shinra-matrix-' + index + '-' + field + (region ? '-' + region : '');
 }
@@ -365,8 +427,8 @@ function pageHeader(title, description) {
 	]);
 }
 
-function sectionTitle(title) {
-	return E('h3', { 'style': 'margin: 0 0 .45rem; line-height: 1.25;' }, title);
+function sectionTitle(title, marginTop) {
+	return E('h3', { 'style': 'margin: %s 0 .45rem; line-height: 1.25;'.format(marginTop || '0') }, title);
 }
 
 function sectionDescription(text) {
@@ -411,11 +473,12 @@ function sourceMatrix(policy, summary) {
 				]),
 				E('tbody', {}, sources.map(function(source, index) {
 					let item = status[source.name || ''] || {};
+					let refresh = refreshResultForSource(source);
 					return E('tr', {}, [
 						E('td', {}, [
 							E('div', { 'style': 'font-weight: 700; overflow-wrap: anywhere;' }, source.name || _('未命名订阅源')),
 							E('div', { 'style': 'font-size: 12px; color: #667; overflow-wrap: anywhere;' }, shortUrl(source.url)),
-							item.error ? E('div', { 'style': 'font-size: 12px; color: #991b1b; overflow-wrap: anywhere; margin-top: .25rem;' }, item.error) : E('div')
+							refresh ? E('div', { 'style': 'font-size: 12px; color: %s; overflow-wrap: anywhere; margin-top: .25rem;'.format(refresh.ok || refresh.status === 'running' ? '#2563eb' : '#991b1b') }, refreshResultText(refresh)) : item.error ? E('div', { 'style': 'font-size: 12px; color: #991b1b; overflow-wrap: anywhere; margin-top: .25rem;' }, item.error) : E('div')
 						]),
 						E('td', { 'style': 'text-align: center;' }, shinraUi.checkboxInput({
 							'id': matrixId(index, 'enabled'),
@@ -455,6 +518,7 @@ function sourceMatrix(policy, summary) {
 							' ',
 							E('button', {
 								'class': shinraMotion.buttonClass('btn cbi-button cbi-button-apply'),
+								'disabled': refreshInProgress() ? 'disabled' : null,
 								'click': function(ev) {
 									ev.preventDefault();
 									refreshOneSource(index);
@@ -490,7 +554,7 @@ function policySettings(policy) {
 					'value': (policy.region_keywords[region] || []).join(', ')
 				}));
 			})),
-			sectionTitle(_('DNS 专用出站组')),
+			sectionTitle(_('DNS 专用出站组'), '1rem'),
 			field(_('启用'), shinraUi.checkboxInput({
 				'id': 'shinra-dns-urltest-enabled',
 				'checked': policy.dns_urltest.enabled ? 'checked' : null
@@ -498,7 +562,7 @@ function policySettings(policy) {
 			field(_('节点筛选关键词'), E('textarea', {
 				'id': 'shinra-dns-urltest-keywords',
 				'class': 'cbi-input-textarea',
-				'style': 'width: 100%; min-height: 4rem; font-family: monospace;',
+				'style': 'width: 100%; height: 2.4rem; min-height: 2.4rem; resize: none; font: inherit;',
 				'spellcheck': 'false'
 			}, [ (policy.dns_urltest.keywords || []).join(', ') ])),
 			field(_('测速地址'), E('input', {
@@ -522,10 +586,11 @@ function policySettings(policy) {
 				'value': policy.dns_urltest.tolerance
 			})),
 			E('div', { 'style': 'color: #667; font-size: .9em; margin-top: -.35rem;' }, _('生成固定 tag “📡 dns-out”，并接管已有 detour 的 DNS server；关闭或无匹配节点时回退至主选择器。')),
+			sectionTitle(_('手动选择组'), '1rem'),
 			field(_('手动选择关键词'), E('textarea', {
 				'id': 'shinra-manual-selector-keywords',
 				'class': 'cbi-input-textarea',
-				'style': 'width: 100%; min-height: 4rem; font-family: monospace;',
+				'style': 'width: 100%; height: 2.4rem; min-height: 2.4rem; resize: none; font: inherit;',
 				'spellcheck': 'false',
 				'placeholder': _('例如：Brazil, 巴西, 🇧🇷, Turkey, 土耳其, 🇹🇷')
 			}, [ (policy.manual_selector.keywords || []).join(', ') ])),
@@ -536,7 +601,7 @@ function policySettings(policy) {
 			field(_('过滤关键字'), E('textarea', {
 				'id': 'shinra-banned-keywords',
 				'class': 'cbi-input-textarea',
-				'style': 'width: 100%; min-height: 4rem; font-family: monospace;',
+				'style': 'width: 100%; min-height: 4rem; font: inherit;',
 				'spellcheck': 'false'
 			}, [ policy.banned_keywords || '' ])),
 			field(_('测速地址'), E('input', {
@@ -664,7 +729,7 @@ function fetchSafetySettings(policy) {
 			E('textarea', {
 				'id': 'shinra-fetch-bypass-hosts',
 				'class': 'cbi-input-textarea',
-				'style': 'width: 100%; min-height: 6rem; font-family: monospace;',
+				'style': 'width: 100%; min-height: 6rem; font: inherit;',
 				'spellcheck': 'false'
 			}, [ bypass.hosts.join('\n') ]),
 			E('div', { 'style': 'color: #667; font-size: 12px; margin-top: .5rem;' }, _('这只影响订阅抓取，不会修改模板、候选配置、运行配置或策略组状态。'))
@@ -823,17 +888,6 @@ function sourceRows(summary) {
 			E('div', { 'style': 'overflow-wrap: anywhere; color: #667;' }, source.error || '-')
 		]);
 	});
-}
-
-function sourceSummaryById(summary, sourceId, sourceName) {
-	let sources = summary && Array.isArray(summary.sources) ? summary.sources : [];
-
-	for (let i = 0; i < sources.length; i++) {
-		if ((sourceId && sources[i].id === sourceId) || (!sourceId && sourceName && sources[i].name === sourceName))
-			return sources[i];
-	}
-
-	return {};
 }
 
 function nodesForSource(summary, sourceId) {
@@ -1071,75 +1125,101 @@ function testEditorSource() {
 	);
 }
 
-function refreshStatusDone(status) {
-	return [ 'success', 'partial', 'failed_preserved', 'failed_no_snapshot', 'failed' ].indexOf(status || '') >= 0;
+function refreshProgressText(refresh) {
+	let task = refresh.task || {};
+	let meta = task.meta && typeof task.meta === 'object' ? task.meta : {};
+	if (refresh.scope === 'source')
+		return _('正在刷新订阅源：%s...').format(refresh.source_name || meta.source_name || '-');
+	return _('正在刷新节点快照：%d / %d，当前 %s。').format(task.completed_count || 0, task.total_count || 0, task.current_item || '-');
 }
 
-function waitSourceRefresh(sourceName, attempt) {
-	return callSubscriptionsRefreshStatus().then(function(result) {
-		let task = result && result.ok && result.data ? result.data.task || {} : {};
-		let taskName = taskDisplayName(result, _('订阅刷新任务'));
-		let status = task.status || '';
+function refreshFinishedText(refresh) {
+	let task = refresh.task || {};
+	let status = task.status || '';
+	if (refresh.scope === 'source') {
+		if (status === 'success')
+			return _('订阅源已刷新：%s。准备使用新节点时，请生成候选配置。').format(refresh.source_name || '-');
+		if (status === 'failed_preserved')
+			return _('订阅源刷新失败，已保留旧节点：%s。').format(refresh.source_name || '-');
+	}
+	if (status === 'success')
+		return _('节点快照已刷新。准备使用新节点时，请生成候选配置。');
+	if (status === 'partial')
+		return _('节点快照部分刷新完成，请查看各订阅源结果。');
+	return _('订阅刷新未完成：%s。').format(status || _('未知'));
+}
 
-		if (!refreshStatusDone(status) && attempt < 30) {
-			setStatus(_('正在刷新订阅源：%s...').format(sourceName || '-'), true);
+function refreshTaskStale(task) {
+	let updatedAt = task && task.updated_at ? Date.parse(task.updated_at) : NaN;
+	return Number.isFinite(updatedAt) && Date.now() - updatedAt > 120000;
+}
+
+function redrawRefreshState() {
+	updateMain(draftPolicy(), window.shinraNodeSnapshotSummary || {}, null);
+	updateRefreshControls();
+}
+
+function waitRefresh(runId, attempt) {
+	return callSubscriptionsRefreshStatus(runId).then(function(result) {
+		let data = result && result.ok && result.data ? result.data : {};
+		let refresh = activeRefresh();
+		if (!refresh || refresh.run_id !== runId)
+			return;
+		if (!data.matches_run) {
+			setActiveRefresh(null);
+			setStatus(_('订阅刷新任务已被其他操作替换。'), false);
+			redrawRefreshState();
+			return;
+		}
+
+		refresh.task = data.task || {};
+		setActiveRefresh(refresh);
+		redrawRefreshState();
+		if (!refreshStatusDone(refresh.task.status)) {
+			setRefreshStatus(refreshTaskStale(refresh.task) ? _('订阅刷新任务超过两分钟没有更新，仍在等待后台恢复。') : refreshProgressText(refresh), !refreshTaskStale(refresh.task));
 			return new Promise(function(resolve) {
-				window.setTimeout(resolve, 1000);
+				window.setTimeout(resolve, refreshTaskStale(refresh.task) ? 5000 : 1000);
 			}).then(function() {
-				return waitSourceRefresh(sourceName, attempt + 1);
+				return waitRefresh(runId, attempt + 1);
 			});
 		}
 
 		return callNodeSnapshotSummary().then(function(summary) {
 			if (summary && summary.ok && summary.data)
 				updateSummary(summary.data);
-
-			let ok = status === 'success' || status === 'partial';
-			if (status === 'failed_preserved')
-				setStatus(_('订阅源刷新失败，已保留旧节点：%s。').format(sourceName || '-'), false);
-			else if (status === 'success')
-				setStatus(_('订阅源已刷新：%s。准备使用新节点时，请生成候选配置。').format(sourceName || '-'), true);
-			else if (status === 'partial')
-				setStatus(_('订阅源刷新部分完成：%s。').format(sourceName || '-'), false);
-			else
-				setStatus(_('%s状态：%s。').format(taskName, status || _('未知')), ok);
+			let ok = refresh.task.status === 'success';
+			setStatus(refreshFinishedText(refresh), ok);
+			redrawRefreshState();
 		});
+	}).catch(function(error) {
+		let refresh = activeRefresh();
+		if (refresh && refresh.run_id === runId) {
+			setActiveRefresh(null);
+			setStatus(error.message || String(error), false);
+			redrawRefreshState();
+		}
 	});
 }
 
-function waitSourceRefreshSummary(sourceName, sourceId, attempt) {
-	return callSubscriptionsRefreshStatus().then(function(result) {
-		let task = result && result.ok && result.data ? result.data.task || {} : {};
-		let taskName = taskDisplayName(result, _('订阅刷新任务'));
-		let status = task.status || '';
+function beginRefresh(result, scope, sourceId, sourceName) {
+	let data = result && result.data ? result.data : {};
+	let task = data.task || {};
+	let runId = data.run_id || (task.meta && task.meta.run_id) || '';
+	if (!runId) {
+		setStatus(_('订阅刷新任务未返回运行标识。'), false);
+		return;
+	}
 
-		if (!refreshStatusDone(status) && attempt < 30) {
-			setStatus(_('正在刷新订阅源：%s...').format(sourceName || '-'), true);
-			return new Promise(function(resolve) {
-				window.setTimeout(resolve, 1000);
-			}).then(function() {
-				return waitSourceRefreshSummary(sourceName, sourceId, attempt + 1);
-			});
-		}
-
-		return callNodeSnapshotSummary().then(function(summary) {
-			let data = summary && summary.ok && summary.data ? summary.data : {};
-			if (summary && summary.ok && summary.data)
-				updateSummary(summary.data);
-
-			let sourceSummary = sourceSummaryById(data, sourceId, sourceName);
-			let nodeCount = sourceSummary.node_count || 0;
-			let strategy = data.refresh_strategy || 'direct';
-			if (status === 'failed_preserved')
-				setStatus(_('订阅源刷新失败，已保留旧节点：%d 个节点，策略 %s。').format(nodeCount, strategy), false);
-			else if (status === 'success')
-				setStatus(_('订阅源已刷新：%d 个节点，策略 %s。准备使用新节点时，请生成候选配置。').format(nodeCount, strategy), true);
-			else if (status === 'partial')
-				setStatus(_('订阅源部分刷新：%d 个节点，策略 %s。').format(nodeCount, strategy), false);
-			else
-				setStatus(_('%s状态：%s。').format(taskName, status || _('未知')), status === 'success' || status === 'partial');
-		});
+	setActiveRefresh({
+		run_id: runId,
+		scope: data.scope || (task.meta && task.meta.scope) || scope,
+		source_id: data.source_id || (task.meta && task.meta.target_source_id) || sourceId || '',
+		source_name: sourceName || '',
+		task: task
 	});
+	redrawRefreshState();
+	setRefreshStatus(refreshProgressText(activeRefresh()), true);
+	return waitRefresh(runId, 0);
 }
 
 function refreshOneSource(index, retried) {
@@ -1169,10 +1249,14 @@ function refreshOneSource(index, retried) {
 			return;
 		}
 		if (!(result.data && result.data.started)) {
+			let task = result.data && result.data.task ? result.data.task : {};
+			let runId = task.meta && task.meta.run_id || '';
+			if (runId)
+				return beginRefresh(result, task.meta && task.meta.scope || 'all', task.meta && task.meta.target_source_id || '', '');
 			setStatus(_('已有%s正在运行，请稍后再试。').format(taskDisplayName(result, _('订阅刷新任务'))), false);
 			return;
 		}
-		return waitSourceRefreshSummary(sourceName, sourceId, 0);
+		return beginRefresh(result, 'source', sourceId, sourceName);
 	}).catch(function(error) {
 		setStatus(error.message || String(error), false);
 	});
@@ -1244,6 +1328,9 @@ return view.extend({
 			callSubscriptionsGet(),
 			callNodeSnapshotSummary().catch(function(e) {
 				return { ok: false, message: _('节点快照摘要加载失败'), detail: e.message || String(e) };
+			}),
+			callSubscriptionsRefreshStatus().catch(function(e) {
+				return { ok: false, message: _('订阅刷新状态加载失败'), detail: e.message || String(e) };
 			})
 		]);
 	},
@@ -1251,12 +1338,26 @@ return view.extend({
 	render: function(data) {
 		let content = data && data[0] && data[0].ok && data[0].data ? data[0].data.content : '{}';
 		let summary = data && data[1] && data[1].ok && data[1].data ? data[1].data : {};
+		let refreshData = data && data[2] && data[2].ok && data[2].data ? data[2].data : {};
+		let refreshTask = refreshData.task || {};
+		let refreshMeta = refreshTask.meta && typeof refreshTask.meta === 'object' ? refreshTask.meta : {};
+		if (!refreshStatusDone(refreshTask.status) && refreshMeta.run_id) {
+			setActiveRefresh({
+				run_id: refreshMeta.run_id,
+				scope: refreshMeta.scope || 'all',
+				source_id: refreshMeta.target_source_id || '',
+				source_name: refreshMeta.source_name || '',
+				task: refreshTask
+			});
+		} else {
+			setActiveRefresh(null);
+		}
 		let policy = parseSubscriptions(content);
 		shinraMotion.inject();
 		window.shinraNodeSnapshotSummary = summary;
 		setDraft(policy);
 
-		return E('div', { 'class': 'cbi-map' }, [
+		let page = E('div', { 'class': 'cbi-map' }, [
 			E('div', {}, [
 				pageHeader(_('订阅'), _('管理 Sub-Store 输出订阅源、区域授权、清洗策略和 URLTest 参数。刷新只写入节点快照。')),
 				shinraUi.statusBox('shinra-subscriptions-status', '', 'neutral', { margin: '0 0 .75rem' }),
@@ -1266,7 +1367,7 @@ return view.extend({
 						E('option', { 'value': 'proxy', 'selected': policy.refresh_strategy === 'proxy' ? 'selected' : null }, _('代理刷新'))
 					]),
 					E('button', { 'class': shinraMotion.buttonClass('btn cbi-button cbi-button-save'), 'click': this.handleSave.bind(this) }, _('保存订阅设置')),
-					E('button', { 'class': shinraMotion.buttonClass('btn cbi-button cbi-button-apply'), 'click': this.handleRefresh.bind(this) }, _('刷新节点快照'))
+					E('button', { 'id': 'shinra-refresh-all', 'class': shinraMotion.buttonClass('btn cbi-button cbi-button-apply'), 'disabled': refreshInProgress() ? 'disabled' : null, 'click': this.handleRefresh.bind(this) }, _('刷新节点快照'))
 				]),
 				renderMain(policy, summary, null),
 				subscriptionUpdateDetails(policy),
@@ -1274,6 +1375,10 @@ return view.extend({
 				snapshotDetails(summary)
 			])
 		]);
+		let refresh = activeRefresh();
+		if (refresh)
+			window.setTimeout(function() { waitRefresh(refresh.run_id, 0); }, 0);
+		return page;
 	},
 
 	handleSave: function(ev) {
@@ -1295,18 +1400,22 @@ return view.extend({
 		if (ev)
 			ev.preventDefault();
 		let strategy = getValue('shinra-refresh-strategy') || '';
-		setStatus(_('正在刷新节点快照...'), true);
-		return callSubscriptionsRefresh(strategy).then(function(result) {
+		setStatus(_('正在提交节点快照刷新...'), true);
+		return callSubscriptionsRefreshStart(strategy).then(function(result) {
 			if (!(result && result.ok)) {
 				setStatus('%s: %s'.format(result && (result.message || result.code) || _('刷新失败'), subscriptionFailureHint(result && (result.detail || result.code) || '')), false);
 				return;
 			}
 
-			setStatus(_('节点快照已刷新：%d 个节点，策略 %s。准备使用新节点时，请生成候选配置。').format(result.data && result.data.node_count || 0, result.data && result.data.refresh_strategy || 'direct'), true);
-			return callNodeSnapshotSummary().then(function(summary) {
-				if (summary && summary.ok && summary.data)
-					updateSummary(summary.data);
-			});
+			if (!(result.data && result.data.started)) {
+				let task = result.data && result.data.task ? result.data.task : {};
+				let runId = task.meta && task.meta.run_id || '';
+				if (runId)
+					return beginRefresh(result, task.meta && task.meta.scope || 'all', task.meta && task.meta.target_source_id || '', '');
+				setStatus(_('已有%s正在运行，请稍后再试。').format(taskDisplayName(result, _('订阅刷新任务'))), false);
+				return;
+			}
+			return beginRefresh(result, 'all', '', '');
 		}).catch(function(error) {
 			setStatus(error.message || String(error), false);
 		});
