@@ -17,6 +17,13 @@
     "interval": "3m",
     "tolerance": 150
   },
+  "dns_urltest": {
+    "enabled": false,
+    "keywords": ["HK", "Hong Kong", "HongKong", "香港"],
+    "url": "https://www.gstatic.com/generate_204",
+    "interval": "3m",
+    "tolerance": 150
+  },
   "rate_filter": {
     "enabled": true,
     "threshold": 1.5,

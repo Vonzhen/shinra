@@ -66,6 +66,13 @@ const DEFAULT_URLTEST_PARAMS = {
 	interval: '3m',
 	tolerance: 150
 };
+const DEFAULT_DNS_URLTEST = {
+	enabled: false,
+	keywords: [ 'HK', 'Hong Kong', 'HongKong', '香港' ],
+	url: 'https://www.gstatic.com/generate_204',
+	interval: '3m',
+	tolerance: 150
+};
 const DEFAULT_RATE_FILTER = {
 	enabled: true,
 	threshold: 1.5,
@@ -201,6 +208,15 @@ function normalizePolicy(raw) {
 			url: normalizeUrltestUrl(policy.urltest_params && policy.urltest_params.url),
 			interval: policy.urltest_params && policy.urltest_params.interval || DEFAULT_URLTEST_PARAMS.interval,
 			tolerance: policy.urltest_params && policy.urltest_params.tolerance != null ? Number(policy.urltest_params.tolerance) : DEFAULT_URLTEST_PARAMS.tolerance
+		},
+		dns_urltest: {
+			enabled: policy.dns_urltest && policy.dns_urltest.enabled === true,
+			keywords: policy.dns_urltest && Array.isArray(policy.dns_urltest.keywords) ? policy.dns_urltest.keywords.filter(function(value) {
+				return typeof value === 'string' && value !== '';
+			}) : DEFAULT_DNS_URLTEST.keywords.slice(),
+			url: normalizeUrltestUrl(policy.dns_urltest && policy.dns_urltest.url),
+			interval: policy.dns_urltest && policy.dns_urltest.interval || DEFAULT_DNS_URLTEST.interval,
+			tolerance: policy.dns_urltest && policy.dns_urltest.tolerance != null ? Number(policy.dns_urltest.tolerance) : DEFAULT_DNS_URLTEST.tolerance
 		},
 		rate_filter: normalizeRateFilter(policy.rate_filter, keys),
 		subscription_update: normalizeSubscriptionUpdate(policy.subscription_update),
@@ -474,6 +490,38 @@ function policySettings(policy) {
 					'value': (policy.region_keywords[region] || []).join(', ')
 				}));
 			})),
+			sectionTitle(_('DNS 专用出站组')),
+			field(_('启用'), shinraUi.checkboxInput({
+				'id': 'shinra-dns-urltest-enabled',
+				'checked': policy.dns_urltest.enabled ? 'checked' : null
+			})),
+			field(_('节点筛选关键词'), E('textarea', {
+				'id': 'shinra-dns-urltest-keywords',
+				'class': 'cbi-input-textarea',
+				'style': 'width: 100%; min-height: 4rem; font-family: monospace;',
+				'spellcheck': 'false'
+			}, [ (policy.dns_urltest.keywords || []).join(', ') ])),
+			field(_('测速地址'), E('input', {
+				'id': 'shinra-dns-urltest-url',
+				'class': 'cbi-input-text',
+				'style': 'width: 100%;',
+				'value': policy.dns_urltest.url || DEFAULT_DNS_URLTEST.url
+			})),
+			field(_('间隔'), E('input', {
+				'id': 'shinra-dns-urltest-interval',
+				'class': 'cbi-input-text',
+				'style': 'width: 100%;',
+				'value': policy.dns_urltest.interval || DEFAULT_DNS_URLTEST.interval
+			})),
+			field(_('容差'), E('input', {
+				'id': 'shinra-dns-urltest-tolerance',
+				'class': 'cbi-input-text',
+				'type': 'number',
+				'min': '0',
+				'style': 'width: 100%;',
+				'value': policy.dns_urltest.tolerance
+			})),
+			E('div', { 'style': 'color: #667; font-size: .9em; margin-top: -.35rem;' }, _('生成固定 tag “📡 dns-out”，并接管已有 detour 的 DNS server；关闭或无匹配节点时回退至主选择器。')),
 			field(_('手动选择关键词'), E('textarea', {
 				'id': 'shinra-manual-selector-keywords',
 				'class': 'cbi-input-textarea',
@@ -922,6 +970,17 @@ function collectPolicyFromPage() {
 		url: normalizeUrltestUrl(getValue('shinra-urltest-url')),
 		interval: getValue('shinra-urltest-interval') || DEFAULT_URLTEST_PARAMS.interval,
 		tolerance: Number(getValue('shinra-urltest-tolerance') || DEFAULT_URLTEST_PARAMS.tolerance)
+	};
+	policy.dns_urltest = {
+		enabled: checked('shinra-dns-urltest-enabled'),
+		keywords: getValue('shinra-dns-urltest-keywords').split(/[\n,]+/).map(function(value) {
+			return value.trim();
+		}).filter(function(value) {
+			return value !== '';
+		}),
+		url: normalizeUrltestUrl(getValue('shinra-dns-urltest-url')),
+		interval: getValue('shinra-dns-urltest-interval') || DEFAULT_DNS_URLTEST.interval,
+		tolerance: Number(getValue('shinra-dns-urltest-tolerance') || DEFAULT_DNS_URLTEST.tolerance)
 	};
 	let rateRegions = [];
 	keys.forEach(function(region) {

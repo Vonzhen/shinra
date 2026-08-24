@@ -10,11 +10,12 @@ import { ERR } from 'shinra.core.error';
 import { file_exists, json_stringify_pretty } from 'shinra.core.utils';
 import { artifact_check_config, artifact_write_candidate } from 'shinra.core.artifact';
 import { parse_profile, parse_node_snapshot, parse_subscriptions_policy, parse_ruleset_policy } from 'shinra.generator_input';
-import { validate_tun_contract, validate_extensions, strip_extensions, validate_references } from 'shinra.generator_validate';
+import { validate_tun_contract, validate_extensions, strip_extensions, validate_references, validated_main_selector_tag } from 'shinra.generator_validate';
 import { collect_profile_tags, normalized_nodes, collect_node_tags } from 'shinra.generator_nodes';
 import { generate_region_groups, grouped_node_tags, unmatched_node_tag_list, matched_node_count } from 'shinra.generator_groups';
 import { direct_outbound_tag, inject_selectors, main_selector_option_count, merge_outbounds } from 'shinra.generator_selectors';
 import { collect_manual_selector_consumers, restore_manual_selector_references, generate_manual_selector } from 'shinra.generator_manual_selector';
+import { generate_dns_urltest, route_dns_detours } from 'shinra.generator_dns';
 import { localize_rulesets } from 'shinra.generator_rulesets';
 import { apply_dashboard_api_service, ensure_control_plane_proxy_inbound } from 'shinra.generator_control_plane';
 
@@ -32,6 +33,7 @@ function generate_candidate(trace_id, req) {
 		let node_tags = collect_node_tags(nodes);
 		let manual_consumers = collect_manual_selector_consumers(profile);
 		let groups = generate_region_groups(subscriptions, nodes, profile_tags, node_tags);
+		let dns_group = generate_dns_urltest(subscriptions, nodes, profile_tags, node_tags);
 		let matched_nodes = grouped_node_tags(groups);
 		let unmatched_nodes = unmatched_node_tag_list(nodes, matched_nodes);
 		let matched_count = matched_node_count(nodes, matched_nodes);
@@ -40,7 +42,8 @@ function generate_candidate(trace_id, req) {
 		restore_manual_selector_references(profile, manual_consumers);
 		let manual_selector = generate_manual_selector(subscriptions, nodes, direct_outbound_tag(profile), profile_tags, node_tags);
 		let main_options = main_selector_option_count(profile);
-		merge_outbounds(profile, groups, manual_selector, nodes);
+		merge_outbounds(profile, groups, manual_selector, dns_group, nodes);
+		let dns_detours_adjusted = route_dns_detours(profile, dns_group, validated_main_selector_tag(profile));
 		let ruleset = localize_rulesets(profile, ruleset_policy);
 		let api_service = apply_dashboard_api_service(profile);
 		let control_proxy = ensure_control_plane_proxy_inbound(profile);
@@ -58,6 +61,10 @@ function generate_candidate(trace_id, req) {
 			skipped_high_rate: normalized.skipped_high_rate,
 			skipped_inactive_source: normalized.skipped_inactive_source,
 			generated_groups: length(groups),
+			dns_urltest_enabled: subscriptions.dns_urltest.enabled,
+			dns_group_nodes: dns_group != null ? length(dns_group.outbounds) : 0,
+			dns_detours_adjusted: dns_detours_adjusted,
+			dns_detours_fallback: dns_group == null,
 			matched_node_count: matched_count,
 			unmatched_node_count: unmatched_count,
 			main_selector_options: main_options,

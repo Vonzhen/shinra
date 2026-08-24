@@ -39,6 +39,16 @@ function default_urltest_params() {
 	};
 }
 
+function default_dns_urltest() {
+	return {
+		enabled: false,
+		keywords: [ "HK", "Hong Kong", "HongKong", "香港" ],
+		url: "https://www.gstatic.com/generate_204",
+		interval: "3m",
+		tolerance: 150
+	};
+}
+
 function default_manual_selector() {
 	return {
 		keywords: []
@@ -344,6 +354,42 @@ function normalize_urltest_params(raw) {
 	return result;
 }
 
+function normalize_dns_urltest(raw) {
+	let defaults = default_dns_urltest();
+	let result = {
+		enabled: false,
+		keywords: clone_string_array(defaults.keywords, "dns_urltest.keywords"),
+		url: defaults.url,
+		interval: defaults.interval,
+		tolerance: defaults.tolerance
+	};
+
+	if (type(raw) == "object" && raw != null && type(raw) != "array") {
+		result.enabled = raw.enabled == true;
+		if (type(raw.keywords) == "array")
+			result.keywords = clone_string_array(raw.keywords, "dns_urltest.keywords");
+		if (type(raw.url) == "string" && raw.url != "")
+			result.url = raw.url;
+		if (type(raw.interval) == "string" && raw.interval != "")
+			result.interval = raw.interval;
+		if (type(raw.tolerance) == "int" || type(raw.tolerance) == "double")
+			result.tolerance = raw.tolerance;
+	}
+
+	if (length(result.keywords) == 0)
+		result.keywords = clone_string_array(defaults.keywords, "dns_urltest.keywords");
+	if (substr(result.url, 0, 7) != "http://" && substr(result.url, 0, 8) != "https://")
+		die("dns_urltest.url must start with http:// or https://");
+	if (index(result.url, "://x.test/") >= 0 || result.url == "http://x.test" || result.url == "https://x.test")
+		result.url = defaults.url;
+	if (type(result.interval) != "string" || result.interval == "")
+		die("dns_urltest.interval must be a non-empty string");
+	if (result.tolerance < 0)
+		die("dns_urltest.tolerance must not be negative");
+
+	return result;
+}
+
 function normalize_rate_filter(raw, regions) {
 	let defaults = default_rate_filter();
 	let result = {
@@ -560,11 +606,12 @@ function normalize_subscriptions_policy(config) {
 		manual_selector: normalize_manual_selector(config.manual_selector),
 		banned_keywords: merge_pipe_text(default_banned_keywords(), config.banned_keywords),
 		urltest_params: normalize_urltest_params(config.urltest_params),
+		dns_urltest: normalize_dns_urltest(config.dns_urltest),
 		rate_filter: normalize_rate_filter(config.rate_filter, regions),
 		subscription_update: normalize_subscription_update_policy(config.subscription_update),
 		sources: sources
 	};
 }
 
-export { default_region_keywords, default_banned_keywords, default_urltest_params, default_manual_selector, default_rate_filter, default_subscription_update_policy, validate_refresh_strategy, validate_fetch_strategy, normalize_subscriptions_policy };
+export { default_region_keywords, default_banned_keywords, default_urltest_params, default_dns_urltest, default_manual_selector, default_rate_filter, default_subscription_update_policy, validate_refresh_strategy, validate_fetch_strategy, normalize_subscriptions_policy };
 
