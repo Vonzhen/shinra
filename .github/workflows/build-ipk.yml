@@ -90,4 +90,19 @@ jobs:
           path: test-artifacts
 
       - name: Install and Verify APK in OpenWrt
-        run: bash ./tests/openwrt-apk-integration.sh ./test-artifacts/luci-app-shinra_*.apk
+        shell: bash
+        run: |
+          set -o pipefail
+          bash ./tests/openwrt-apk-integration.sh ./test-artifacts/luci-app-shinra_*.apk 2>&1 | tee /tmp/openwrt-apk-integration.log
+
+      - name: Summarize OpenWrt Integration Log
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '## OpenWrt APK Integration Log'
+            echo
+            echo '```text'
+            tail -n 160 /tmp/openwrt-apk-integration.log 2>/dev/null || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
