@@ -1,14 +1,32 @@
-name: Build Shinra Packages
+name: Verify Shinra on OpenWrt
 
 on:
   push:
-    branches: [ master ]
+    branches: [ dev ]
+  pull_request:
+    branches: [ dev, master ]
   workflow_dispatch:
 
 jobs:
+  static:
+    name: Static Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Provision Static Tools
+        run: sudo apt-get update && sudo apt-get install -y python3-yaml
+
+      - name: Validate Source Files
+        run: bash ./tests/ci-static.sh
+
   build:
     name: Assemble Packages
     runs-on: ubuntu-latest
+    needs: static
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -54,3 +72,22 @@ jobs:
           path: '*.apk'
           if-no-files-found: error
           retention-days: 7
+
+  openwrt-apk-integration:
+    name: OpenWrt 25.12 APK Integration
+    runs-on: ubuntu-latest
+    needs: build
+    env:
+      OPENWRT_VERSION: 25.12.5
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Download APK Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: shinra-apk-${{ github.sha }}
+          path: test-artifacts
+
+      - name: Install and Verify APK in OpenWrt
+        run: bash ./tests/openwrt-apk-integration.sh ./test-artifacts/luci-app-shinra_*.apk
