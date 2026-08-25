@@ -1,6 +1,6 @@
 #!/bin/ash
 
-set -eu
+set -eux
 
 APK_PACKAGE="${1:?missing APK package path}"
 
