@@ -11,7 +11,7 @@ ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 APK_PATH="$(readlink -f -- "$1")"
 OPENWRT_VERSION="${OPENWRT_VERSION:-25.12.5}"
 ROOTFS_DIR="$(mktemp -d)"
-ROOTFS_URL="https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/targets/x86/64/rootfs.tar.gz"
+ROOTFS_URL="https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/targets/x86/64/openwrt-${OPENWRT_VERSION}-x86-64-rootfs.tar.gz"
 
 cleanup() {
 	set +e
