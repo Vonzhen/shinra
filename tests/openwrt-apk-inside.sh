@@ -9,7 +9,9 @@ mkdir -p /var/lock /var/run/ubus
 UBUSD_PID=$!
 apk update >/dev/null
 apk add ca-bundle >/dev/null
-apk add --allow-untrusted "$APK_PACKAGE" >/dev/null
+IPKG_NO_SCRIPT=1 apk add --allow-untrusted "$APK_PACKAGE" >/dev/null
+
+/etc/uci-defaults/90-shinra
 
 test -x /etc/init.d/shinra
 test -f /etc/shinra/dashboard.json
