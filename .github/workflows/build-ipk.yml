@@ -78,7 +78,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     env:
-      OPENWRT_VERSION: 25.12.5
+      OPENWRT_VERSION: 25.12.4
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4

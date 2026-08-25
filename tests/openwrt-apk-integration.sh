@@ -10,7 +10,7 @@ fi
 ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 APK_PATH="$(readlink -f -- "$1")"
 OPENWRT_VERSION="${OPENWRT_VERSION:-25.12.5}"
-OPENWRT_IMAGE="ghcr.io/openwrt/rootfs:x86_64-${OPENWRT_VERSION}"
+OPENWRT_IMAGE="openwrt/rootfs:x86_64-${OPENWRT_VERSION}"
 
 docker run --rm --privileged \
 	-v "${ROOT_DIR}:/workspace:ro" \
