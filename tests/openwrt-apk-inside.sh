@@ -5,6 +5,8 @@ set -eux
 APK_PACKAGE="${1:?missing APK package path}"
 
 mkdir -p /var/lock /var/run/ubus
+/sbin/ubusd &
+UBUSD_PID=$!
 apk update >/dev/null
 apk add ca-bundle >/dev/null
 apk add --allow-untrusted "$APK_PACKAGE" >/dev/null
@@ -14,8 +16,6 @@ test -f /etc/shinra/dashboard.json
 test -f /usr/share/rpcd/ucode/shinra.uc
 test -f /www/luci-static/resources/view/shinra/panel.js
 
-/sbin/ubusd &
-UBUSD_PID=$!
 /sbin/rpcd &
 RPCD_PID=$!
 
