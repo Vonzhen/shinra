@@ -12,9 +12,10 @@ Shinra 以 OpenWrt 25.12 及更高版本为主要目标，发布物以 APK 为�
 
 1. 从 `dev` 创建功能分支，完成修改后提交 Pull Request 到 `dev`；个人小改动也可以直接推送到 `dev`。
 2. 等待 **Verify Shinra on OpenWrt** 通过。
-3. 创建 `dev` 到 `master` 的 Pull Request；只在 `dev` 已通过且该 PR 检查通过时合并。
-4. 确认版本号后，在合并提交创建 `vX.Y.Z` 标签。
-5. 等待 **Release Shinra Packages** 完成，并从 Release 下载 APK；IPK 仅在确有旧系统兼容需求时使用。
+3. 在真实 OpenWrt 25.12+ 设备安装 GitHub Actions 生成的 APK，确认 LuCI、生成并应用配置、sing-box 运行及 Dashboard 可用。
+4. 创建 `dev` 到 `master` 的 Pull Request；只在 `dev` 已通过且设备验收完成时合并。
+5. 确认版本号后，在合并提交创建 `vX.Y.Z` 标签。
+6. 等待 **Release Shinra Packages** 完成，并从 Release 下载 APK；IPK 仅在确有旧系统兼容需求时使用。
 
 建议在 GitHub 仓库设置中为 `master` 启用分支保护：要求 Pull Request、要求 **Verify Shinra on OpenWrt** 状态检查通过，并限制直接推送。
 
@@ -24,6 +25,5 @@ Shinra 以 OpenWrt 25.12 及更高版本为主要目标，发布物以 APK 为�
 
 1. JSON、Git diff、GitHub Actions YAML 与 LuCI JavaScript 语法检查。
 2. APK 与 IPK 的构建；APK 是主要交付物。
-3. 基于官方 OpenWrt 25.12 x86_64 rootfs 的 APK 集成测试：安装刚构建的 APK，启动 `ubusd` 和 `rpcd`，调用 Shinra ubus API，生成并用 `sing-box check` 检查候选配置，并确认候选配置不含 Clash API。
 
-这覆盖 Shinra 的包安装、UCode 模块加载、rpcd、默认配置、配置生成和 sing-box 配置校验。它不模拟真实路由器的目标 CPU、网卡驱动、TUN/防火墙与实际 WAN；涉及这些边界或大版本升级时，仍建议在实际设备完成一次验收。
+容器化 OpenWrt 测试不作为门禁：它不能可靠模拟 procd、TUN、路由、防火墙和实际 WAN，维护成本高于收益。每次准备将 `dev` 合并到 `master` 时，改为在真实 OpenWrt 25.12+ 设备安装 CI 生成的 APK，完成一次设备验收。
