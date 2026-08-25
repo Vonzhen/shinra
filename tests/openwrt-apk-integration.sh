@@ -25,13 +25,13 @@ trap cleanup EXIT
 
 curl --fail --location --retry 3 --output "${ROOTFS_DIR}/rootfs.tar.gz" "${ROOTFS_URL}"
 sudo tar -xzf "${ROOTFS_DIR}/rootfs.tar.gz" -C "${ROOTFS_DIR}"
-sudo mkdir -p "${ROOTFS_DIR}/proc" "${ROOTFS_DIR}/sys" "${ROOTFS_DIR}/dev" "${ROOTFS_DIR}/workspace" "${ROOTFS_DIR}/tmp/shinra-test"
+sudo mkdir -p "${ROOTFS_DIR}/proc" "${ROOTFS_DIR}/sys" "${ROOTFS_DIR}/dev" "${ROOTFS_DIR}/workspace" "${ROOTFS_DIR}/tmp/shinra-test" "${ROOTFS_DIR}/tmp/resolv.conf.d"
 sudo mount -t proc proc "${ROOTFS_DIR}/proc"
 sudo mount -t sysfs sysfs "${ROOTFS_DIR}/sys"
 sudo mount --rbind /dev "${ROOTFS_DIR}/dev"
 sudo mount --make-rslave "${ROOTFS_DIR}/dev"
 sudo mount --bind "${ROOT_DIR}" "${ROOTFS_DIR}/workspace"
 sudo cp "${APK_PATH}" "${ROOTFS_DIR}/tmp/shinra-test/luci-app-shinra.apk"
-sudo cp /etc/resolv.conf "${ROOTFS_DIR}/etc/resolv.conf"
+sudo cp /etc/resolv.conf "${ROOTFS_DIR}/tmp/resolv.conf.d/resolv.conf.auto"
 
 sudo chroot "${ROOTFS_DIR}" /bin/ash /workspace/tests/openwrt-apk-inside.sh /tmp/shinra-test/luci-app-shinra.apk
