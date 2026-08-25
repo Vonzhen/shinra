@@ -19,7 +19,7 @@ cleanup() {
 	sudo umount -l "${ROOTFS_DIR}/dev" 2>/dev/null
 	sudo umount -l "${ROOTFS_DIR}/sys" 2>/dev/null
 	sudo umount -l "${ROOTFS_DIR}/proc" 2>/dev/null
-	rm -rf "${ROOTFS_DIR}"
+	sudo rm -rf "${ROOTFS_DIR}"
 }
 trap cleanup EXIT
 
