@@ -4,9 +4,9 @@ set -eux
 
 APK_PACKAGE="${1:?missing APK package path}"
 
-apk update
-apk add ca-bundle
-apk add --allow-untrusted "$APK_PACKAGE"
+apk update >/dev/null
+apk add ca-bundle >/dev/null
+apk add --allow-untrusted "$APK_PACKAGE" >/dev/null
 
 test -x /etc/init.d/shinra
 test -f /etc/shinra/dashboard.json
