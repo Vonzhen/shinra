@@ -17,7 +17,9 @@ docker run --rm --privileged \
 	-v "${APK_PATH}:/tmp/luci-app-shinra.apk:ro" \
 	"${OPENWRT_IMAGE}" \
 	/bin/ash -ec '
-		cd /root
+		setup="$(find / -maxdepth 3 -type f -name setup.sh -print -quit)"
+		[ -n "$setup" ]
+		cd "$(dirname "$setup")"
 		[ -d ./scripts ] || ./setup.sh
 		/bin/ash /workspace/tests/openwrt-apk-inside.sh /tmp/luci-app-shinra.apk
 	'
