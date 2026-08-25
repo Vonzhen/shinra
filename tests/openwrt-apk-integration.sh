@@ -17,7 +17,7 @@ docker run --rm --privileged \
 	-v "${APK_PATH}:/tmp/luci-app-shinra.apk:ro" \
 	"${OPENWRT_IMAGE}" \
 	/bin/ash -ec '
-		setup="$(find / -maxdepth 3 -type f -name setup.sh -print -quit)"
+		setup="$(find / -maxdepth 3 -type f -name setup.sh | head -n 1)"
 		[ -n "$setup" ]
 		cd "$(dirname "$setup")"
 		[ -d ./scripts ] || ./setup.sh
