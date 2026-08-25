@@ -289,8 +289,7 @@ function commandText() {
 		'ubus call shinra diagnostics_get',
 		'ubus call shinra connectivity_probe',
 		'ubus call shinra logs_get',
-		'ubus call shinra last_error_get',
-		'ubus call shinra selector_list | head -c 3000'
+		'ubus call shinra last_error_get'
 	].join('\n');
 }
 
@@ -302,19 +301,15 @@ function controlplanePanel() {
 	const lastError = shinraUi.dataOf(pageResults.lastError);
 	const logs = shinraUi.dataOf(pageResults.logs);
 	const apiStatus = shinraUi.dataOf(pageResults.apiStatus);
-	const official = apiStatus.official_api || {};
-	const clash = apiStatus.clash_api || {};
+	const singboxApi = apiStatus.singbox_api || {};
 	const taskLocks = shinraUi.dataOf(pageResults.taskLocks).locks || [];
 
 	return E('div', {}, [
 		E('div', { 'style': shinraUi.sectionStyle() }, [
 			shinraUi.sectionTitle(_('API 状态')),
-			field(_('Official API'), official.available ? _('可用') : _('不可用')),
-			field(_('Official API 地址'), official.api_url || '-'),
-			field(_('Official API 原因'), official.reason || '-'),
-			field(_('Clash API'), clash.available ? _('可用') : _('不可用')),
-			field(_('Clash API 地址'), clash.external_controller || '-'),
-			field(_('Clash API 原因'), clash.reason || '-')
+			field(_('sing-box API'), singboxApi.available ? _('可用') : _('不可用')),
+			field(_('sing-box API 地址'), singboxApi.api_url || '-'),
+			field(_('sing-box API 原因'), singboxApi.reason || '-')
 		]),
 		E('div', { 'style': shinraUi.sectionStyle() }, [
 			shinraUi.sectionTitle(_('控制面状态')),

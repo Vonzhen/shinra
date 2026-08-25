@@ -8,12 +8,9 @@ import { subscriptions_get, subscriptions_save, subscriptions_refresh, subscript
 import { runtime_status, runtime_start, runtime_stop, runtime_restart } from 'shinra.runtime';
 import { generate_candidate, check_candidate } from 'shinra.generator';
 import { config_apply, config_rollback, runtime_healthcheck } from 'shinra.apply';
-import { dashboard_overview, dashboard_metrics } from 'shinra.dashboard';
 import { dashboard_source_get, dashboard_source_save, dashboard_status } from 'shinra.dashboard_config';
 import { api_status } from 'shinra.api_status';
 import { logs_get, last_error_get, task_locks_get, task_lock_recover, diagnostics_get } from 'shinra.diagnostics';
-import { selector_list, selector_delay_test, selector_set } from 'shinra.control';
-import { connections_list } from 'shinra.connections';
 import { connectivity_probe } from 'shinra.connectivity';
 import { ruleset_inventory, ruleset_required_inventory, ruleset_policy_get, ruleset_policy_save, ruleset_download_required, ruleset_download_required_start, ruleset_download_required_status, ruleset_artifact_status, ruleset_download_one_start, ruleset_download_one_status } from 'shinra.ruleset';
 import { notify_settings_get, notify_settings_save, notify_test_telegram } from 'shinra.notify';
@@ -326,22 +323,6 @@ const methods = {
 		}
 	},
 
-	dashboard_overview: {
-		args: {},
-		call: function(req) {
-			let trace_id = gen_trace_id();
-			return gateway(trace_id, dashboard_overview, req);
-		}
-	},
-
-	dashboard_metrics: {
-		args: {},
-		call: function(req) {
-			let trace_id = gen_trace_id();
-			return gateway(trace_id, dashboard_metrics, req);
-		}
-	},
-
 	dashboard_source_get: {
 		args: {},
 		call: function(req) {
@@ -373,43 +354,6 @@ const methods = {
 		call: function(req) {
 			let trace_id = gen_trace_id();
 			return gateway(trace_id, api_status, req);
-		}
-	},
-
-	selector_list: {
-		args: {},
-		call: function(req) {
-			let trace_id = gen_trace_id();
-			return gateway(trace_id, selector_list, req);
-		}
-	},
-
-	selector_set: {
-		args: {
-			selector: "",
-			target: ""
-		},
-		call: function(req) {
-			let trace_id = gen_trace_id();
-			return gateway(trace_id, selector_set, req);
-		}
-	},
-
-	selector_delay_test: {
-		args: {
-			selector: ""
-		},
-		call: function(req) {
-			let trace_id = gen_trace_id();
-			return gateway(trace_id, selector_delay_test, req);
-		}
-	},
-
-	connections_list: {
-		args: {},
-		call: function(req) {
-			let trace_id = gen_trace_id();
-			return gateway(trace_id, connections_list, req);
 		}
 	},
 

@@ -83,19 +83,6 @@ function generate_candidate(trace_id, req) {
 			api_service_port: api_service.listen_port,
 			api_service_endpoint_valid: api_service.endpoint_valid,
 			api_service_secret_configured: api_service.secret_configured,
-			api_service_profile_existing: api_service.profile_existing,
-			api_service_profile_conflict: api_service.profile_conflict,
-			api_service_conflict_resolved: api_service.conflict_resolved,
-			api_service_preserved_clash_api: api_service.preserved_clash_api,
-			clash_api_enabled: api_service.clash_api.enabled,
-			clash_api_source: api_service.clash_api.source,
-			clash_api_external_controller: api_service.clash_api.external_controller,
-			clash_api_secret_configured: api_service.clash_api.secret_configured,
-			clash_api_profile_existing: api_service.clash_api.profile_existing,
-			clash_api_profile_conflict: api_service.clash_api.profile_conflict,
-			clash_api_dashboard_enabled: api_service.clash_api.dashboard_enabled,
-			clash_api_dashboard_conflict: api_service.clash_api.dashboard_conflict,
-			clash_api_conflict_resolved: api_service.clash_api.conflict_resolved,
 			dashboard_enabled: api_service.dashboard_enabled,
 			dashboard_path: api_service.dashboard_path,
 			dashboard_download_url: api_service.dashboard_download_url,
@@ -111,8 +98,6 @@ function generate_candidate(trace_id, req) {
 		let err = "" + e;
 		if (substr(err, 0, 13) == "TUN_CONTRACT:")
 			return Fail(ERR.E_TUN_CONTRACT_FAILED, "Profile TUN contract failed", trace_id, substr(err, 13));
-		if (substr(err, 0, 24) == "CLASH_API_PORT_CONFLICT:")
-			return Fail(ERR.E_CLASH_API_PORT_CONFLICT, "Clash API port conflicts with official API service", trace_id, substr(err, 24));
 		return Fail(ERR.E_GENERATE_FAILED, "Failed to generate Candidate", trace_id, err);
 	}
 }

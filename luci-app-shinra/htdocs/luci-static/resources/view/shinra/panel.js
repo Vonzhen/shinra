@@ -14,8 +14,15 @@ const callDashboardStatus = rpc.declare({
 	expect: { '': {} }
 });
 
+const callApiStatus = rpc.declare({
+	object: 'shinra',
+	method: 'api_status',
+	expect: { '': {} }
+});
+
 let sourceResult = null;
 let statusResult = null;
+let apiStatusResult = null;
 
 function dataOf(result) {
 	if (result && result.ok && result.data)
@@ -71,7 +78,7 @@ function mutedStyle() {
 function errorMessage() {
 	const messages = [];
 
-	[sourceResult, statusResult].forEach(function(result) {
+	[sourceResult, statusResult, apiStatusResult].forEach(function(result) {
 		if (result && !result.ok)
 			messages.push('%s: %s'.format(result.message || result.code || _('加载失败'), result.detail || result.code || _('无详细信息')));
 	});
@@ -82,6 +89,8 @@ function errorMessage() {
 function renderPage() {
 	const source = sourceOf();
 	const dash = dashboardOf();
+	const status = dataOf(statusResult);
+	const singboxApi = dataOf(apiStatusResult).singbox_api || {};
 	const error = errorMessage();
 
 	if (error) {
@@ -99,6 +108,24 @@ function renderPage() {
 		]);
 	}
 
+	if (!singboxApi.available) {
+		return E('div', { 'id': 'shinra-panel-root', 'class': 'cbi-map' }, [
+			E('div', { 'style': sectionStyle() }, [
+				E('h3', { 'style': 'margin: 0 0 .35rem; line-height: 1.25;' }, _('sing-box API 未就绪')),
+				E('div', { 'style': mutedStyle() }, _('请先在概览页生成并应用配置。sing-box 启动后会自动下载并托管 Dashboard。'))
+			])
+		]);
+	}
+
+	if (!status.dashboard_ready) {
+		return E('div', { 'id': 'shinra-panel-root', 'class': 'cbi-map' }, [
+			E('div', { 'style': sectionStyle() }, [
+				E('h3', { 'style': 'margin: 0 0 .35rem; line-height: 1.25;' }, _('Dashboard 正在初始化')),
+				E('div', { 'style': mutedStyle() }, _('首次启动时 sing-box 会自动下载 Dashboard。下载完成后刷新此页即可打开。'))
+			])
+		]);
+	}
+
 	return E('div', { 'id': 'shinra-panel-root', 'class': 'cbi-map' }, [
 		E('iframe', {
 			'src': dashboardUrl(),
@@ -112,13 +139,15 @@ return view.extend({
 	load: function() {
 		return Promise.all([
 			callDashboardSourceGet(),
-			callDashboardStatus()
+			callDashboardStatus(),
+			callApiStatus()
 		]);
 	},
 
 	render: function(results) {
 		sourceResult = results && results[0] ? results[0] : {};
 		statusResult = results && results[1] ? results[1] : {};
+		apiStatusResult = results && results[2] ? results[2] : {};
 		return renderPage();
 	},
 

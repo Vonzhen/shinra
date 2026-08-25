@@ -8,14 +8,7 @@
   "dashboard": {
     "enabled": true,
     "path": "/www/shinra/dashboard",
-    "download_url": "https://github.com/Zephyruso/zashboard/releases/latest/download/dist.zip",
+    "download_url": "https://github.com/miozen/shinra-dashboard/releases/latest/download/shinra-dashboard.zip",
     "update_interval": "1d"
-  },
-  "clash_api": {
-    "enabled": true,
-    "external_controller": "0.0.0.0:9090",
-    "secret": "",
-    "external_ui": "",
-    "default_mode": "rule"
   }
 }

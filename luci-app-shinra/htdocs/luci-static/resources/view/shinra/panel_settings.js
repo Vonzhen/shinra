@@ -23,7 +23,7 @@ const callDashboardStatus = rpc.declare({
 	expect: { '': {} }
 });
 
-const DEFAULT_DOWNLOAD_URL = 'https://github.com/Zephyruso/zashboard/releases/latest/download/dist-sarasa-only.zip';
+const DEFAULT_DOWNLOAD_URL = 'https://github.com/miozen/shinra-dashboard/releases/latest/download/shinra-dashboard.zip';
 
 let sourceResult = null;
 let statusResult = null;
@@ -49,13 +49,6 @@ function defaultSource() {
 			path: '/www/shinra/dashboard',
 			download_url: DEFAULT_DOWNLOAD_URL,
 			update_interval: '1d'
-		},
-		clash_api: {
-			enabled: true,
-			external_controller: '0.0.0.0:9090',
-			secret: '',
-			external_ui: '',
-			default_mode: 'rule'
 		}
 	};
 }
@@ -69,11 +62,6 @@ function sourceOf() {
 function dashboardOf() {
 	const source = sourceOf();
 	return source.dashboard || defaultSource().dashboard;
-}
-
-function clashApiOf() {
-	const source = sourceOf();
-	return source.clash_api || defaultSource().clash_api;
 }
 
 function resultMessage(result, fallback) {
@@ -123,82 +111,22 @@ function inputChecked(id, fallback) {
 	return node ? !!node.checked : !!fallback;
 }
 
-function parseOrigins(value) {
-	const text = String(value || '');
-	const items = text.split(/[\n,]+/).map(function(item) {
-		return item.trim();
-	}).filter(function(item) {
-		return item;
-	});
-
-	return items.length ? items : [ '*' ];
-}
-
-function originText(source) {
-	const origins = source.access_control_allow_origin;
-	if (!Array.isArray(origins) || !origins.length)
-		return '*';
-	return origins.join('\n');
-}
-
-function splitController(controller) {
-	const value = String(controller || '0.0.0.0:9090');
-	const fallback = { host: '0.0.0.0', port: 9090 };
-	const bracketEnd = value.indexOf(']');
-
-	if (value.charAt(0) === '[' && bracketEnd > 0) {
-		const port = Number(value.substr(bracketEnd + 2));
-		return {
-			host: value.substr(1, bracketEnd - 1),
-			port: Number.isFinite(port) && port > 0 ? port : fallback.port
-		};
-	}
-
-	const offset = value.lastIndexOf(':');
-	if (offset <= 0)
-		return fallback;
-
-	const port = Number(value.substr(offset + 1));
-	return {
-		host: value.substr(0, offset) || fallback.host,
-		port: Number.isFinite(port) && port > 0 ? port : fallback.port
-	};
-}
-
-function joinController(host, port) {
-	host = String(host || '0.0.0.0');
-	port = Number(port || 9090);
-	if (!Number.isFinite(port) || port <= 0)
-		port = 9090;
-	if (host.indexOf(':') >= 0 && host.charAt(0) !== '[')
-		host = '[' + host + ']';
-	return host + ':' + port;
-}
-
 function collectSource() {
 	const source = sourceOf();
 	const port = Number(inputValue('shinra-dashboard-listen-port', source.listen_port || 20123));
-	const clashPort = Number(inputValue('shinra-clash-api-listen-port', splitController(clashApiOf().external_controller).port));
 
 	return {
 		enabled: inputChecked('shinra-dashboard-enabled', true),
 		listen: inputValue('shinra-dashboard-listen', '0.0.0.0'),
 		listen_port: Number.isFinite(port) ? port : 20123,
-		secret: inputValue('shinra-dashboard-secret', ''),
-		access_control_allow_origin: parseOrigins(inputValue('shinra-dashboard-origins', '*')),
-		access_control_allow_private_network: inputChecked('shinra-dashboard-private-network', true),
+		secret: '',
+		access_control_allow_origin: [ '*' ],
+		access_control_allow_private_network: true,
 		dashboard: {
 			enabled: inputChecked('shinra-dashboard-ui-enabled', true),
 			path: inputValue('shinra-dashboard-path', '/www/shinra/dashboard'),
 			download_url: inputValue('shinra-dashboard-download-url', DEFAULT_DOWNLOAD_URL),
 			update_interval: inputValue('shinra-dashboard-update-interval', '1d')
-		},
-		clash_api: {
-			enabled: inputChecked('shinra-clash-api-enabled', true),
-			external_controller: joinController(inputValue('shinra-clash-api-listen', '0.0.0.0'), clashPort),
-			secret: inputValue('shinra-clash-api-secret', ''),
-			external_ui: inputValue('shinra-clash-api-external-ui', ''),
-			default_mode: inputValue('shinra-clash-api-default-mode', 'rule')
 		}
 	};
 }
@@ -237,11 +165,11 @@ function apiSettings() {
 	const source = sourceOf();
 
 	return E('div', { 'style': shinraUi.sectionStyle() }, [
-		shinraUi.sectionTitle(_('Official API')),
-		shinraUi.sectionDescription(_('这些设置用于生成 sing-box services 里的 API 服务。Profile 已配置 Official API 且不冲突时优先保留 Profile；与 Clash API 端口冲突时使用这里的配置兜底。修改后需要重新生成并应用配置。')),
+		shinraUi.sectionTitle(_('sing-box API')),
+		shinraUi.sectionDescription(_('这些设置用于生成由 Shinra 管理的 sing-box API 服务。Dashboard 通过同源地址连接该服务，访问密钥固定留空。修改后需要重新生成并应用配置。')),
 		E('label', { 'style': 'display: flex; align-items: center; gap: .5rem; margin-bottom: .6rem;' }, [
 			shinraUi.checkboxInput({ 'id': 'shinra-dashboard-enabled', 'checked': source.enabled ? 'checked' : null }),
-			E('span', {}, _('启用 Official API'))
+			E('span', {}, _('启用 sing-box API'))
 		]),
 		E('div', { 'style': 'display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: .75rem;' }, [
 			E('label', {}, [
@@ -252,18 +180,6 @@ function apiSettings() {
 				shinraUi.fieldLabel(_('监听端口')),
 				E('input', { 'id': 'shinra-dashboard-listen-port', 'type': 'number', 'min': '1', 'max': '65535', 'class': 'cbi-input-text', 'style': 'width: 100%; box-sizing: border-box;', 'value': source.listen_port || 20123 })
 			]),
-			E('label', {}, [
-				shinraUi.fieldLabel(_('访问密钥')),
-				E('input', { 'id': 'shinra-dashboard-secret', 'class': 'cbi-input-text', 'style': 'width: 100%; box-sizing: border-box;', 'placeholder': _('私有局域网可留空'), 'value': source.secret || '' })
-			])
-		]),
-		E('label', { 'style': 'display: block; margin-top: .6rem;' }, [
-			shinraUi.fieldLabel(_('允许的 CORS 来源')),
-			E('textarea', { 'id': 'shinra-dashboard-origins', 'class': 'cbi-input-textarea', 'style': 'width: 100%; min-height: 64px; box-sizing: border-box;' }, originText(source))
-		]),
-		E('label', { 'style': 'display: flex; align-items: center; gap: .5rem; margin-top: .6rem;' }, [
-			shinraUi.checkboxInput({ 'id': 'shinra-dashboard-private-network', 'checked': source.access_control_allow_private_network ? 'checked' : null }),
-			E('span', {}, _('允许私有网络访问'))
 		])
 	]);
 }
@@ -293,57 +209,16 @@ function dashboardSettings() {
 	]);
 }
 
-function clashApiSettings() {
-	const clash = clashApiOf();
-	const controller = splitController(clash.external_controller);
-
-	return E('div', { 'style': shinraUi.sectionStyle() }, [
-		shinraUi.sectionTitle(_('Clash API')),
-		shinraUi.sectionDescription(_('这些设置用于生成 sing-box experimental.clash_api。Profile 已配置且不与最终生效的 Official API 冲突时优先保留 Profile；端口冲突时使用这里的配置兜底。')),
-		E('label', { 'style': 'display: flex; align-items: center; gap: .5rem; margin-bottom: .6rem;' }, [
-			shinraUi.checkboxInput({ 'id': 'shinra-clash-api-enabled', 'checked': clash.enabled ? 'checked' : null }),
-			E('span', {}, _('启用 Clash API'))
-		]),
-		E('div', { 'style': 'display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: .75rem;' }, [
-			E('label', {}, [
-				shinraUi.fieldLabel(_('监听地址')),
-				E('input', { 'id': 'shinra-clash-api-listen', 'class': 'cbi-input-text', 'style': 'width: 100%; box-sizing: border-box;', 'value': controller.host || '0.0.0.0' })
-			]),
-			E('label', {}, [
-				shinraUi.fieldLabel(_('监听端口')),
-				E('input', { 'id': 'shinra-clash-api-listen-port', 'type': 'number', 'min': '1', 'max': '65535', 'class': 'cbi-input-text', 'style': 'width: 100%; box-sizing: border-box;', 'value': controller.port || 9090 })
-			]),
-			E('label', {}, [
-				shinraUi.fieldLabel(_('访问密钥')),
-				E('input', { 'id': 'shinra-clash-api-secret', 'class': 'cbi-input-text', 'style': 'width: 100%; box-sizing: border-box;', 'placeholder': _('私有局域网可留空'), 'value': clash.secret || '' })
-			]),
-			E('label', {}, [
-				shinraUi.fieldLabel(_('默认模式')),
-				E('select', { 'id': 'shinra-clash-api-default-mode', 'class': 'cbi-input-select', 'style': 'width: 100%; box-sizing: border-box;' }, [
-					E('option', { 'value': 'rule', 'selected': (clash.default_mode || 'rule') === 'rule' ? 'selected' : null }, _('rule')),
-					E('option', { 'value': 'global', 'selected': clash.default_mode === 'global' ? 'selected' : null }, _('global')),
-					E('option', { 'value': 'direct', 'selected': clash.default_mode === 'direct' ? 'selected' : null }, _('direct'))
-				])
-			])
-		]),
-		E('label', { 'style': 'display: block; margin-top: .6rem;' }, [
-			shinraUi.fieldLabel(_('External UI')),
-			E('input', { 'id': 'shinra-clash-api-external-ui', 'class': 'cbi-input-text', 'style': 'width: 100%; box-sizing: border-box;', 'placeholder': _('通常留空'), 'value': clash.external_ui || '' })
-		])
-	]);
-}
-
 function renderContent() {
 	shinraMotion.inject();
 
 	return E('div', { 'id': 'shinra-panel-settings-root' }, [
 		shinraUi.pageHeader(
 			_('面板'),
-			_('Official API 负责 Dashboard 托管；Clash API 用于兼容面板的模式和策略组控制。Profile 中已配置的 API 会优先保留，端口冲突时使用此页设置兜底。Shinra 只保存设置并在重新生成配置时写入 sing-box。')
+			_('sing-box API 负责托管并同源提供 Shinra Dashboard；Shinra 在重新生成配置时写入固定的无密钥 API 服务。')
 		),
 		apiSettings(),
 		dashboardSettings(),
-		clashApiSettings(),
 		E('div', { 'style': 'display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; margin-top: .7rem;' }, [
 			E('button', { 'class': shinraMotion.buttonClass('btn cbi-button cbi-button-save'), 'click': function(ev) { ev.preventDefault(); return saveSource(); } }, _('保存设置')),
 			inlineResultNode()

@@ -173,7 +173,8 @@ function compact_dashboard(result) {
 		},
 		dashboard: {
 			enabled: dashboard.enabled == true,
-			path: dashboard.path || ""
+			path: dashboard.path || "",
+			ready: data.dashboard_ready == true
 		},
 		dashboard_url: data.dashboard_url || ""
 	});

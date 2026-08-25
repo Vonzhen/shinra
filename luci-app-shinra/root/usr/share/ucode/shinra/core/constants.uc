@@ -42,10 +42,6 @@ const BIN = {
 	WGET: "wget"
 };
 
-const CLASH_API = {
-	DEFAULT_EXTERNAL_CONTROLLER: "0.0.0.0:20123"
-};
-
 const CONTROL_PLANE_PROXY = {
 	TAG: "shinra-control-proxy",
 	LISTEN: "127.0.0.1",
@@ -57,4 +53,4 @@ const AUTO_TASK = {
 	CRON_ENTRY: "5 * * * * /usr/libexec/shinra-auto-task >/dev/null 2>&1"
 };
 
-export { PATH, BIN, CLASH_API, CONTROL_PLANE_PROXY, AUTO_TASK };
+export { PATH, BIN, CONTROL_PLANE_PROXY, AUTO_TASK };
