@@ -2,7 +2,7 @@ name: Verify Shinra on OpenWrt
 
 on:
   push:
-    branches: [ dev, master ]
+    branches: [ dev ]
   pull_request:
     branches: [ dev, master ]
   workflow_dispatch:
