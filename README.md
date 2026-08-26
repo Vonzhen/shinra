@@ -13,7 +13,7 @@ LuCI / Dashboard -> http://<路由器地址>:20123/dashboard/
 
 公网反向代理是可选增强。启用后，只有浏览器当前 Origin 精确匹配已配置的公网 Origin 时，
 Shinra 才会使用配置的 Dashboard 与 API 路径（例如 `/shinra/dashboard/` 与
-`/shinra/api/`）。NPS 的域名、证书、路径重写、WebSocket 与访问控制始终在 NPS 服务器
+`/`）。NPS 的域名、证书、路径重写、WebSocket 与访问控制始终在 NPS 服务器
 维护，Shinra 不管理 NPS，也不为此引入本机 nginx。
 
 详细的开发、验收与发布流程见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)。

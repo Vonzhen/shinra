@@ -24,7 +24,7 @@ function default_dashboard_source() {
 			enabled: false,
 			origin: "",
 			dashboard_path: "/shinra/dashboard/",
-			api_path: "/shinra/api/"
+			api_path: "/"
 		},
 		dashboard: {
 			enabled: true,
@@ -98,7 +98,6 @@ function normalize_public_access(raw) {
 		result.enabled = raw.enabled == true;
 		result.origin = normalize_public_origin(raw.origin);
 		result.dashboard_path = normalize_public_path(raw.dashboard_path, defaults.dashboard_path, "public_access.dashboard_path");
-		result.api_path = normalize_public_path(raw.api_path, defaults.api_path, "public_access.api_path");
 	}
 
 	if (result.enabled && result.origin == "")

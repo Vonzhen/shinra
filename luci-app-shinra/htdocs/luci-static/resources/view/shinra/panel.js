@@ -40,7 +40,7 @@ function defaultSource() {
 			enabled: false,
 			origin: '',
 			dashboard_path: '/shinra/dashboard/',
-			api_path: '/shinra/api/'
+			api_path: '/'
 		},
 		dashboard: {
 			enabled: true,

@@ -48,7 +48,7 @@ function defaultSource() {
 			enabled: false,
 			origin: '',
 			dashboard_path: '/shinra/dashboard/',
-			api_path: '/shinra/api/'
+			api_path: '/'
 		},
 		dashboard: {
 			enabled: true,
@@ -137,7 +137,7 @@ function collectSource() {
 			enabled: inputChecked('shinra-public-access-enabled', false),
 			origin: inputValue('shinra-public-access-origin', ''),
 			dashboard_path: inputValue('shinra-public-dashboard-path', '/shinra/dashboard/'),
-			api_path: inputValue('shinra-public-api-path', '/shinra/api/')
+			api_path: '/'
 		},
 		dashboard: {
 			enabled: inputChecked('shinra-dashboard-ui-enabled', true),
@@ -231,7 +231,6 @@ function publicAccessSettings() {
 	const publicAccess = publicAccessOf();
 	const port = source.listen_port || 20123;
 	const dashboardPath = publicAccess.dashboard_path || '/shinra/dashboard/';
-	const apiPath = publicAccess.api_path || '/shinra/api/';
 	const routerIp = _('OpenWrt 管理 IP');
 	const target = routerIp + ':' + port;
 	const routeStyle = 'padding: .45rem .6rem; border: 1px solid #dfe3e8; border-radius: 6px; background: #f8fafc; overflow-wrap: anywhere;';
@@ -252,10 +251,6 @@ function publicAccessSettings() {
 			E('label', {}, [
 				shinraUi.fieldLabel(_('Dashboard 公网路径')),
 				E('input', { 'id': 'shinra-public-dashboard-path', 'class': 'cbi-input-text', 'style': 'width: 100%; box-sizing: border-box;', 'value': dashboardPath })
-			]),
-			E('label', {}, [
-				shinraUi.fieldLabel(_('API 公网路径')),
-				E('input', { 'id': 'shinra-public-api-path', 'class': 'cbi-input-text', 'style': 'width: 100%; box-sizing: border-box;', 'value': apiPath })
 			])
 		]),
 		E('div', { 'style': 'margin-top: .85rem;' }, [
@@ -271,11 +266,11 @@ function publicAccessSettings() {
 					'%s → %s，重写为 /dashboard/'.format(dashboardPath, target)
 				]),
 				E('div', { 'style': routeStyle }, [
-					E('strong', {}, _('API：')),
-					'%s → %s，重写为 /'.format(apiPath, target)
+					E('strong', {}, _('sing-box gRPC / WebSocket：')),
+					'/daemon.StartedService/ → %s，保持原路径（不重写）'.format(target)
 				])
 			]),
-			E('div', { 'style': shinraUi.mutedStyle('font-size: 12px; margin-top: .5rem;') }, _('Dashboard 与 API 两条规则使用同一个 sing-box API 监听端口，并启用 WebSocket 转发、保留查询参数。路径匹配应优先于根路径规则，避免 / 被提前接管。公网 HTTPS 入口应由 NPS 或其上游负责证书与访问控制。'))
+			E('div', { 'style': shinraUi.mutedStyle('font-size: 12px; margin-top: .5rem;') }, _('Dashboard 与 gRPC/WebSocket 规则使用同一个 sing-box API 监听端口。API 公网路径应保持为 /，以便请求直接落在 /daemon.StartedService/；路径匹配应优先于根路径规则，避免 / 被提前接管。公网 HTTPS 入口应由 NPS 或其上游负责证书与访问控制。'))
 		])
 	]);
 }

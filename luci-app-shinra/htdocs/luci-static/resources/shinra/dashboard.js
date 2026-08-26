@@ -48,7 +48,10 @@ function resolve(source) {
 
 	if (publicMode) {
 		const dashboardPath = normalizePath(publicAccess.dashboard_path, '/shinra/dashboard/');
-		const apiPath = normalizePath(publicAccess.api_path, '/shinra/api/');
+		// NPS 0.34.x rewrites ordinary HTTP requests but forwards the original
+		// RequestURI during WebSocket upgrades. Keep the API at origin root so
+		// gRPC-Web and grpc-websockets both reach /daemon.StartedService/ intact.
+		const apiPath = '/';
 		const apiUrl = configuredOrigin + apiPath;
 		return {
 			mode: 'public',
