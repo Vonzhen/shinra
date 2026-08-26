@@ -1,6 +1,7 @@
 'use strict';
 'require view';
 'require rpc';
+'require shinra.dashboard as shinraDashboard';
 
 const callDashboardSourceGet = rpc.declare({
 	object: 'shinra',
@@ -35,6 +36,12 @@ function defaultSource() {
 		enabled: true,
 		listen: '0.0.0.0',
 		listen_port: 20123,
+		public_access: {
+			enabled: false,
+			origin: '',
+			dashboard_path: '/shinra/dashboard/',
+			api_path: '/shinra/api/'
+		},
 		dashboard: {
 			enabled: true,
 			path: '/www/shinra/dashboard'
@@ -51,20 +58,6 @@ function sourceOf() {
 function dashboardOf() {
 	const source = sourceOf();
 	return source.dashboard || defaultSource().dashboard;
-}
-
-function dashboardHost(source) {
-	if (source.listen && source.listen !== '0.0.0.0' && source.listen !== '::')
-		return source.listen;
-	return window.location.hostname || location.hostname || '192.168.1.1';
-}
-
-function dashboardUrl() {
-	const source = sourceOf();
-	const status = dataOf(statusResult);
-	if (status.dashboard_url && status.dashboard_url.indexOf('<router-host>') < 0)
-		return status.dashboard_url;
-	return '%s//%s:%s/dashboard/'.format(window.location.protocol || 'http:', dashboardHost(source), source.listen_port || 20123);
 }
 
 function sectionStyle() {
@@ -128,7 +121,7 @@ function renderPage() {
 
 	return E('div', { 'id': 'shinra-panel-root', 'class': 'cbi-map' }, [
 		E('iframe', {
-			'src': dashboardUrl(),
+			'src': shinraDashboard.resolve(source).dashboardUrl,
 			'style': 'width: 100%; height: min(84vh, 820px); border: 1px solid #dfe3e8; border-radius: 8px; background: #fff;',
 			'loading': 'lazy'
 		})

@@ -169,7 +169,10 @@ function compact_dashboard(result) {
 		dashboard = source.dashboard;
 	return compact_result(result, {
 		source: {
-			enabled: source.enabled == true
+			enabled: source.enabled == true,
+			listen: source.listen || "0.0.0.0",
+			listen_port: int(source.listen_port || 20123),
+			public_access: type(source.public_access) == "object" && source.public_access != null ? source.public_access : {}
 		},
 		dashboard: {
 			enabled: dashboard.enabled == true,

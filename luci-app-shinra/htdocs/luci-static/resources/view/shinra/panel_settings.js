@@ -44,6 +44,12 @@ function defaultSource() {
 		secret: '',
 		access_control_allow_origin: [ '*' ],
 		access_control_allow_private_network: true,
+		public_access: {
+			enabled: false,
+			origin: '',
+			dashboard_path: '/shinra/dashboard/',
+			api_path: '/shinra/api/'
+		},
 		dashboard: {
 			enabled: true,
 			path: '/www/shinra/dashboard',
@@ -62,6 +68,11 @@ function sourceOf() {
 function dashboardOf() {
 	const source = sourceOf();
 	return source.dashboard || defaultSource().dashboard;
+}
+
+function publicAccessOf() {
+	const source = sourceOf();
+	return source.public_access || defaultSource().public_access;
 }
 
 function resultMessage(result, fallback) {
@@ -122,6 +133,12 @@ function collectSource() {
 		secret: '',
 		access_control_allow_origin: [ '*' ],
 		access_control_allow_private_network: true,
+		public_access: {
+			enabled: inputChecked('shinra-public-access-enabled', false),
+			origin: inputValue('shinra-public-access-origin', ''),
+			dashboard_path: inputValue('shinra-public-dashboard-path', '/shinra/dashboard/'),
+			api_path: inputValue('shinra-public-api-path', '/shinra/api/')
+		},
 		dashboard: {
 			enabled: inputChecked('shinra-dashboard-ui-enabled', true),
 			path: inputValue('shinra-dashboard-path', '/www/shinra/dashboard'),
@@ -209,6 +226,60 @@ function dashboardSettings() {
 	]);
 }
 
+function publicAccessSettings() {
+	const source = sourceOf();
+	const publicAccess = publicAccessOf();
+	const port = source.listen_port || 20123;
+	const dashboardPath = publicAccess.dashboard_path || '/shinra/dashboard/';
+	const apiPath = publicAccess.api_path || '/shinra/api/';
+	const routerIp = _('OpenWrt 管理 IP');
+	const target = routerIp + ':' + port;
+	const routeStyle = 'padding: .45rem .6rem; border: 1px solid #dfe3e8; border-radius: 6px; background: #f8fafc; overflow-wrap: anywhere;';
+
+	return E('div', { 'style': shinraUi.sectionStyle() }, [
+		shinraUi.sectionTitle(_('公网反向代理访问（可选）')),
+		shinraUi.sectionDescription(_('这是可选增强功能。Shinra 不创建或管理 NPS 规则，只根据当前访问 Origin 选择公网路径；未启用或 Origin 不匹配时，Dashboard 始终使用内网直连。')),
+		E('label', { 'style': 'display: flex; align-items: center; gap: .5rem; margin-bottom: .6rem;' }, [
+			shinraUi.checkboxInput({ 'id': 'shinra-public-access-enabled', 'checked': publicAccess.enabled ? 'checked' : null }),
+			E('span', {}, _('启用公网反向代理入口'))
+		]),
+		E('label', { 'style': 'display: block; margin-top: .6rem;' }, [
+			shinraUi.fieldLabel(_('公网 Origin')),
+			E('input', { 'id': 'shinra-public-access-origin', 'class': 'cbi-input-text', 'style': 'width: 100%; box-sizing: border-box;', 'placeholder': 'https://mop.miozen.uk', 'value': publicAccess.origin || '' }),
+			E('div', { 'style': shinraUi.mutedStyle('font-size: 12px; margin-top: .25rem;') }, _('只填写协议、域名和可选端口，不填写路径。例如：https://mop.miozen.uk'))
+		]),
+		E('div', { 'style': 'display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: .75rem; margin-top: .6rem;' }, [
+			E('label', {}, [
+				shinraUi.fieldLabel(_('Dashboard 公网路径')),
+				E('input', { 'id': 'shinra-public-dashboard-path', 'class': 'cbi-input-text', 'style': 'width: 100%; box-sizing: border-box;', 'value': dashboardPath })
+			]),
+			E('label', {}, [
+				shinraUi.fieldLabel(_('API 公网路径')),
+				E('input', { 'id': 'shinra-public-api-path', 'class': 'cbi-input-text', 'style': 'width: 100%; box-sizing: border-box;', 'value': apiPath })
+			])
+		]),
+		E('div', { 'style': 'margin-top: .85rem;' }, [
+			E('div', { 'style': 'font-weight: 700; margin-bottom: .4rem;' }, _('NPS 服务器配置方法')),
+			E('div', { 'style': shinraUi.mutedStyle('margin-bottom: .5rem;') }, _('在 NPS 的 HTTP 代理中配置以下三条路径规则。目标地址必须填写 OpenWrt 的明确内网管理 IP，不能填写 0.0.0.0 或 127.0.0.1；例如本机管理地址为 10.10.11.1 时，目标分别是 10.10.11.1:80 和 10.10.11.1:20123。')),
+			E('div', { 'style': 'display: grid; gap: .45rem;' }, [
+				E('div', { 'style': routeStyle }, [
+					E('strong', {}, _('LuCI：')),
+					'/ → %s:80，保持原路径'.format(routerIp)
+				]),
+				E('div', { 'style': routeStyle }, [
+					E('strong', {}, _('Dashboard：')),
+					'%s → %s，重写为 /dashboard/'.format(dashboardPath, target)
+				]),
+				E('div', { 'style': routeStyle }, [
+					E('strong', {}, _('API：')),
+					'%s → %s，重写为 /'.format(apiPath, target)
+				])
+			]),
+			E('div', { 'style': shinraUi.mutedStyle('font-size: 12px; margin-top: .5rem;') }, _('Dashboard 与 API 两条规则使用同一个 sing-box API 监听端口，并启用 WebSocket 转发、保留查询参数。路径匹配应优先于根路径规则，避免 / 被提前接管。公网 HTTPS 入口应由 NPS 或其上游负责证书与访问控制。'))
+		])
+	]);
+}
+
 function renderContent() {
 	shinraMotion.inject();
 
@@ -219,6 +290,7 @@ function renderContent() {
 		),
 		apiSettings(),
 		dashboardSettings(),
+		publicAccessSettings(),
 		E('div', { 'style': 'display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; margin-top: .7rem;' }, [
 			E('button', { 'class': shinraMotion.buttonClass('btn cbi-button cbi-button-save'), 'click': function(ev) { ev.preventDefault(); return saveSource(); } }, _('保存设置')),
 			inlineResultNode()

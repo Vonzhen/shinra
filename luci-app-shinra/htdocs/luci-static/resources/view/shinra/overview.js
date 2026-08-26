@@ -3,6 +3,7 @@
 'require rpc';
 'require shinra.time as shinraTime';
 'require shinra.ui as shinraUi';
+'require shinra.dashboard as shinraDashboard';
 'require shinra.motion as shinraMotion';
 
 const callOverviewStatus = rpc.declare({
@@ -64,13 +65,6 @@ function safeJson(text) {
 	} catch (e) {
 		return {};
 	}
-}
-
-function routerHostUrl(url) {
-	url = shinraUi.valueText(url);
-	if (url === '-')
-		return url;
-	return url.replace('://<router-host>', '://%s'.format(window.location.hostname || 'router-host'));
 }
 
 function cardStyle(accent, clickable) {
@@ -463,7 +457,7 @@ function resourceCards() {
 	);
 	const singboxApi = shinraUi.dataOf(pageResults.apiStatus).singbox_api || {};
 	const panelReady = panelSource.enabled == true && panelDashboard.enabled == true && panelDashboard.ready == true && singboxApi.available == true;
-	const panelUrl = routerHostUrl(panel.dashboard_url);
+	const panelUrl = shinraDashboard.resolve(panelSource).dashboardUrl;
 	const panelDetail = panelReady
 		? _('%s | %s').format(_('Dashboard 已就绪'), panelDashboard.path || '-')
 		: _('请先生成并应用配置；首次启动会自动下载 Dashboard。');

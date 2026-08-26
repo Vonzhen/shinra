@@ -20,6 +20,12 @@ function default_dashboard_source() {
 		secret: "",
 		access_control_allow_origin: [ "*" ],
 		access_control_allow_private_network: true,
+		public_access: {
+			enabled: false,
+			origin: "",
+			dashboard_path: "/shinra/dashboard/",
+			api_path: "/shinra/api/"
+		},
 		dashboard: {
 			enabled: true,
 			path: PATH.DASHBOARD_DIR,
@@ -45,6 +51,59 @@ function normalize_origin_list(raw) {
 
 	if (!length(result))
 		return [ "*" ];
+	return result;
+}
+
+function normalize_public_origin(value) {
+	if (type(value) != "string")
+		return "";
+
+	let origin = value;
+	while (length(origin) && substr(origin, length(origin) - 1, 1) == "/")
+		origin = substr(origin, 0, length(origin) - 1);
+
+	if (origin == "")
+		return "";
+	if (!valid_url(origin))
+		die("public_access.origin must start with http:// or https://");
+
+	let authority = index(origin, "https://") == 0 ? substr(origin, 8) : substr(origin, 7);
+	if (authority == "" || index(authority, "/") >= 0 || index(authority, "?") >= 0 || index(authority, "#") >= 0 || index(authority, "@") >= 0)
+		die("public_access.origin must contain only scheme, host and optional port");
+
+	return origin;
+}
+
+function normalize_public_path(value, fallback, field) {
+	let path = type(value) == "string" && value != "" ? value : fallback;
+	if (substr(path, 0, 1) != "/")
+		die(field + " must start with /");
+	if (index(path, "?") >= 0 || index(path, "#") >= 0)
+		die(field + " must not contain query or fragment");
+	if (substr(path, length(path) - 1, 1) != "/")
+		path += "/";
+	return path;
+}
+
+function normalize_public_access(raw) {
+	let defaults = default_dashboard_source().public_access;
+	let result = {
+		enabled: false,
+		origin: "",
+		dashboard_path: defaults.dashboard_path,
+		api_path: defaults.api_path
+	};
+
+	if (type(raw) == "object" && raw != null && type(raw) != "array") {
+		result.enabled = raw.enabled == true;
+		result.origin = normalize_public_origin(raw.origin);
+		result.dashboard_path = normalize_public_path(raw.dashboard_path, defaults.dashboard_path, "public_access.dashboard_path");
+		result.api_path = normalize_public_path(raw.api_path, defaults.api_path, "public_access.api_path");
+	}
+
+	if (result.enabled && result.origin == "")
+		die("public_access.origin is required when public access is enabled");
+
 	return result;
 }
 
@@ -92,6 +151,7 @@ function normalize_dashboard_source(source) {
 		secret: "",
 		access_control_allow_origin: normalize_origin_list(source.access_control_allow_origin),
 		access_control_allow_private_network: source.access_control_allow_private_network == true ? true : false,
+		public_access: normalize_public_access(source.public_access),
 		dashboard: normalize_dashboard(source.dashboard)
 	};
 }
@@ -128,6 +188,7 @@ function dashboard_status_data(source) {
 		secret_configured: source.secret != "",
 		access_control_allow_origin: source.access_control_allow_origin,
 		access_control_allow_private_network: source.access_control_allow_private_network,
+		public_access: source.public_access,
 		api_url: "http://" + (source.listen == "0.0.0.0" || source.listen == "::" ? "<router-host>" : source.listen) + ":" + source.listen_port + "/",
 		dashboard_url: dashboard_url(source),
 		dashboard: source.dashboard,

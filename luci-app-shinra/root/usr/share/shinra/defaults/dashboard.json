@@ -5,6 +5,12 @@
   "secret": "",
   "access_control_allow_origin": ["*"],
   "access_control_allow_private_network": true,
+  "public_access": {
+    "enabled": false,
+    "origin": "",
+    "dashboard_path": "/shinra/dashboard/",
+    "api_path": "/shinra/api/"
+  },
   "dashboard": {
     "enabled": true,
     "path": "/www/shinra/dashboard",
