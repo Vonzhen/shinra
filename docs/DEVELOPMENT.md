@@ -2,6 +2,24 @@
 
 Shinra 以 OpenWrt 25.12 及更高版本为主要目标，发布物以 APK 为主；IPK 只保留为旧系统兼容构建，不作为日常验收目标。
 
+## 不可变约束
+
+下列规则是已确认的产品与发布契约。除非先完成影响分析并获得明确批准，不得通过“顺手优化”、CI 改造或重构改变它们。
+
+### 发布契约
+
+- `dev` 的 **Verify Shinra on OpenWrt** 只用于静态检查和临时 APK/IPK 验证 artifact；它不是 Release。
+- `master` 只接收已验证的 `dev`，不得因为普通推送自动创建 Release 或替换正式下载入口。
+- 只有 `master` 上的 `vX.Y.Z` tag 触发 **Release Shinra Packages**。
+- 正式 Release 的文件名必须保持由包元数据生成的稳定格式：`luci-app-shinra_<版本>-1_all.ipk` 与 `luci-app-shinra_<版本>-r1_all.apk`。不得以 commit SHA、CI run number 或临时 artifact 名替代。
+
+### 业务访问契约
+
+- 内网直连是默认和优先路径：Dashboard 使用 `http://<路由器地址>:<API端口>/dashboard/`。
+- 公网反代是可选增强，只有当前浏览器 Origin 精确匹配已配置的公网 Origin 时才启用；未配置、关闭或不匹配时必须回退到内网直连。
+- NPS 的域名、TLS、路径重写、WebSocket 转发和访问控制属于 NPS 服务器配置；Shinra 只展示所需路径映射说明，不创建、不管理 NPS，也不引入本机 nginx。
+- Dashboard 的公网 API 只能使用与 Dashboard 页面同源的路径；REST/gRPC 与 WebSocket 必须共享同一 API 基址。
+
 ## 分支职责
 
 - `dev`：唯一开发与集成分支。功能修改先进入这里，并必须通过 GitHub Actions。
