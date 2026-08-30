@@ -23,7 +23,7 @@ const callDashboardStatus = rpc.declare({
 	expect: { '': {} }
 });
 
-const DEFAULT_DOWNLOAD_URL = 'https://github.com/Zephyruso/zashboard/releases/latest/download/dist-sarasa-only.zip';
+const DEFAULT_DOWNLOAD_URL = 'https://github.com/Zephyruso/zashboard/releases/download/v3.22.0/dist-sarasa-only.zip';
 
 let sourceResult = null;
 let statusResult = null;
@@ -48,7 +48,7 @@ function defaultSource() {
 			enabled: true,
 			path: '/www/shinra/dashboard',
 			download_url: DEFAULT_DOWNLOAD_URL,
-			update_interval: '1d'
+			update_interval: '9999d'
 		},
 		clash_api: {
 			enabled: true,
@@ -191,7 +191,7 @@ function collectSource() {
 			enabled: inputChecked('shinra-dashboard-ui-enabled', true),
 			path: inputValue('shinra-dashboard-path', '/www/shinra/dashboard'),
 			download_url: inputValue('shinra-dashboard-download-url', DEFAULT_DOWNLOAD_URL),
-			update_interval: inputValue('shinra-dashboard-update-interval', '1d')
+			update_interval: inputValue('shinra-dashboard-update-interval', '9999d')
 		},
 		clash_api: {
 			enabled: inputChecked('shinra-clash-api-enabled', true),
@@ -288,7 +288,7 @@ function dashboardSettings() {
 		]),
 		E('label', { 'style': 'display: block; margin-top: .6rem;' }, [
 			shinraUi.fieldLabel(_('更新间隔')),
-			E('input', { 'id': 'shinra-dashboard-update-interval', 'class': 'cbi-input-text', 'style': 'width: 220px; max-width: 100%; box-sizing: border-box;', 'value': dash.update_interval || '1d' })
+			E('input', { 'id': 'shinra-dashboard-update-interval', 'class': 'cbi-input-text', 'style': 'width: 220px; max-width: 100%; box-sizing: border-box;', 'value': dash.update_interval || '9999d' })
 		])
 	]);
 }

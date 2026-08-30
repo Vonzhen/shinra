@@ -10,7 +10,7 @@ import { Success, Fail } from 'shinra.core.result';
 import { ERR } from 'shinra.core.error';
 import { read_optional_text, write_text_atomic, parse_json_object, request_content, request_keys, json_stringify_pretty } from 'shinra.core.utils';
 
-const DEFAULT_DASHBOARD_DOWNLOAD_URL = "https://github.com/Zephyruso/zashboard/releases/latest/download/dist.zip";
+const DEFAULT_DASHBOARD_DOWNLOAD_URL = "https://github.com/Zephyruso/zashboard/releases/download/v3.22.0/dist-sarasa-only.zip";
 
 function default_dashboard_source() {
 	return {
@@ -24,7 +24,7 @@ function default_dashboard_source() {
 			enabled: true,
 			path: PATH.DASHBOARD_DIR,
 			download_url: DEFAULT_DASHBOARD_DOWNLOAD_URL,
-			update_interval: "1d"
+			update_interval: "9999d"
 		},
 		clash_api: {
 			enabled: true,

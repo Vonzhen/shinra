@@ -8,8 +8,8 @@
   "dashboard": {
     "enabled": true,
     "path": "/www/shinra/dashboard",
-    "download_url": "https://github.com/Zephyruso/zashboard/releases/latest/download/dist.zip",
-    "update_interval": "1d"
+    "download_url": "https://github.com/Zephyruso/zashboard/releases/download/v3.22.0/dist-sarasa-only.zip",
+    "update_interval": "9999d"
   },
   "clash_api": {
     "enabled": true,
