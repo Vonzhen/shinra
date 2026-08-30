@@ -61,7 +61,7 @@ function runtime_official_api(config, source) {
 
 		let data = {
 			configured: true,
-			source: service.tag == "shinra-api" ? "dashboard" : "profile",
+			source: (service.tag == "singbox-api" || service.tag == "shinra-api") ? "dashboard" : "profile",
 			tag: service.tag || "",
 			listen: type(service.listen) == "string" && service.listen != "" ? service.listen : "0.0.0.0",
 			listen_port: int(service.listen_port || 0),
@@ -69,7 +69,7 @@ function runtime_official_api(config, source) {
 			dashboard_enabled: type(service.dashboard) == "object" && service.dashboard != null && service.dashboard.enabled == true
 		};
 
-		if (service.tag == "shinra-api")
+		if (service.tag == "singbox-api" || service.tag == "shinra-api")
 			return data;
 		if (!fallback.configured)
 			fallback = data;
@@ -107,7 +107,7 @@ function official_status(source, config, running) {
 		runtime_configured: runtime_configured,
 		source_enabled: source.enabled == true,
 		source: runtime_configured ? runtime_api.source : (source.enabled == true ? "dashboard" : "none"),
-		tag: runtime_configured ? runtime_api.tag : "shinra-api",
+		tag: runtime_configured ? runtime_api.tag : "singbox-api",
 		running: running,
 		available: available,
 		listen: listen,

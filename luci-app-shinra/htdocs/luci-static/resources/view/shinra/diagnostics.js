@@ -309,9 +309,9 @@ function controlplanePanel() {
 	return E('div', {}, [
 		E('div', { 'style': shinraUi.sectionStyle() }, [
 			shinraUi.sectionTitle(_('API 状态')),
-			field(_('Official API'), official.available ? _('可用') : _('不可用')),
-			field(_('Official API 地址'), official.api_url || '-'),
-			field(_('Official API 原因'), official.reason || '-'),
+			field(_('sing-box API'), official.available ? _('可用') : _('不可用')),
+			field(_('sing-box API 地址'), official.api_url || '-'),
+			field(_('sing-box API 原因'), official.reason || '-'),
 			field(_('Clash API'), clash.available ? _('可用') : _('不可用')),
 			field(_('Clash API 地址'), clash.external_controller || '-'),
 			field(_('Clash API 原因'), clash.reason || '-')
@@ -436,5 +436,4 @@ return view.extend({
 	handleSave: null,
 	handleReset: null
 });
-
 

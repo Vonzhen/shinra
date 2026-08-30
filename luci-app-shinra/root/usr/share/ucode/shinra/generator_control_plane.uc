@@ -28,7 +28,9 @@ function managed_clash_api(policy) {
 		external_controller: source.external_controller || "0.0.0.0:9090",
 		secret: type(source.secret) == "string" ? source.secret : "",
 		external_ui: type(source.external_ui) == "string" ? source.external_ui : "",
-		default_mode: type(source.default_mode) == "string" && source.default_mode != "" ? source.default_mode : "rule"
+		default_mode: type(source.default_mode) == "string" && source.default_mode != "" ? source.default_mode : "rule",
+		access_control_allow_origin: [ "*" ],
+		access_control_allow_private_network: true
 	};
 }
 
@@ -86,7 +88,7 @@ function endpoints_conflict(a, b) {
 function dashboard_api_service(policy) {
 	let service = {
 		type: "api",
-		tag: "shinra-api",
+		tag: "singbox-api",
 		listen: policy.listen,
 		listen_port: policy.listen_port,
 		secret: policy.secret,
@@ -118,14 +120,14 @@ function find_profile_api_service(profile) {
 		if (service.type != "api")
 			continue;
 
-		if (!result.found || service.tag == "shinra-api") {
+		if (!result.found || service.tag == "singbox-api" || service.tag == "shinra-api") {
 			result.found = true;
 			result.index = i;
 			result.service = service;
 			result.endpoint = endpoint_from_service(service);
 		}
 
-		if (service.tag == "shinra-api")
+		if (service.tag == "singbox-api" || service.tag == "shinra-api")
 			return result;
 	}
 
@@ -156,7 +158,7 @@ function api_service_result_from_dashboard(policy, found) {
 		inserted: found.found ? false : true,
 		existing: found.found ? true : false,
 		source: "dashboard",
-		tag: "shinra-api",
+		tag: "singbox-api",
 		listen: policy.listen,
 		listen_port: policy.listen_port,
 		endpoint_valid: true,
@@ -206,16 +208,6 @@ function evaluate_clash_api_policy(profile, policy, official_endpoint, mutate, a
 		conflict_resolved: false
 	};
 
-	if (profile_has && !profile_conflict) {
-		result.enabled = true;
-		result.source = "profile";
-		result.external_controller = profile_api.external_controller || "";
-		result.secret_configured = type(profile_api.secret) == "string" && profile_api.secret != "";
-		if (api_service != null)
-			api_service.preserved_clash_api = true;
-		return result;
-	}
-
 	if (dashboard_enabled && !dashboard_conflict) {
 		if (mutate == true) {
 			let experimental = ensure_object_field(profile, "experimental");
@@ -228,6 +220,16 @@ function evaluate_clash_api_policy(profile, policy, official_endpoint, mutate, a
 		result.conflict_resolved = profile_conflict;
 		if (api_service != null)
 			api_service.preserved_clash_api = false;
+		return result;
+	}
+
+	if (profile_has && !profile_conflict) {
+		result.enabled = true;
+		result.source = "profile";
+		result.external_controller = profile_api.external_controller || "";
+		result.secret_configured = type(profile_api.secret) == "string" && profile_api.secret != "";
+		if (api_service != null)
+			api_service.preserved_clash_api = true;
 		return result;
 	}
 
@@ -255,7 +257,7 @@ function apply_dashboard_api_service(profile) {
 		inserted: false,
 		existing: false,
 		source: "none",
-		tag: "shinra-api",
+		tag: "singbox-api",
 		listen: policy.listen,
 		listen_port: policy.listen_port,
 		endpoint_valid: true,
@@ -271,15 +273,15 @@ function apply_dashboard_api_service(profile) {
 	};
 
 	let choices = [];
-	if (found.found)
-		push(choices, {
-			api: api_service_result_from_profile(found),
-			endpoint: found.endpoint
-		});
 	if (policy.enabled == true)
 		push(choices, {
 			api: api_service_result_from_dashboard(policy, found),
 			endpoint: endpoint_from_listen(policy.listen, policy.listen_port)
+		});
+	if (found.found)
+		push(choices, {
+			api: api_service_result_from_profile(found),
+			endpoint: found.endpoint
 		});
 	if (!length(choices))
 		push(choices, {

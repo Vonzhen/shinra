@@ -31,7 +31,9 @@ function default_dashboard_source() {
 			external_controller: "0.0.0.0:9090",
 			secret: "",
 			external_ui: "",
-			default_mode: "rule"
+			default_mode: "rule",
+			access_control_allow_origin: [ "*" ],
+			access_control_allow_private_network: true
 		}
 	};
 }
@@ -89,7 +91,9 @@ function normalize_clash_api(raw) {
 		external_controller: defaults.external_controller,
 		secret: "",
 		external_ui: "",
-		default_mode: defaults.default_mode
+		default_mode: defaults.default_mode,
+		access_control_allow_origin: [ "*" ],
+		access_control_allow_private_network: true
 	};
 
 	if (type(raw) == "object" && raw != null && type(raw) != "array") {

@@ -411,7 +411,7 @@ function runtimeCards() {
 		card(_('运行时'), running ? _('运行中') : _('已停止'), running ? _('sing-box 服务运行中') : _('服务已停止'), statusTone(running)),
 		card(_('TUN'), tun ? _('存在') : _('缺失'), state.tun_name || '-', statusTone(tun, running)),
 		card(_('配置'), config ? _('就绪') : _('缺失'), state.runtime_config_hash ? _('已观测到运行配置哈希') : _('运行配置缺失'), statusTone(config)),
-		card(_('API'), apiValue, _('Official API: %s | Clash API: %s').format(officialObserved ? (officialOk ? _('可用') : _('不可用')) : '-', clashObserved ? (clashOk ? _('可用') : _('不可用')) : '-'), apiAccent)
+		card(_('API'), apiValue, _('sing-box API: %s | Clash API: %s').format(officialObserved ? (officialOk ? _('可用') : _('不可用')) : '-', clashObserved ? (clashOk ? _('可用') : _('不可用')) : '-'), apiAccent)
 	]);
 }
 

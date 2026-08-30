@@ -237,11 +237,11 @@ function apiSettings() {
 	const source = sourceOf();
 
 	return E('div', { 'style': shinraUi.sectionStyle() }, [
-		shinraUi.sectionTitle(_('Official API')),
-		shinraUi.sectionDescription(_('这些设置用于生成 sing-box services 里的 API 服务。Profile 已配置 Official API 且不冲突时优先保留 Profile；与 Clash API 端口冲突时使用这里的配置兜底。修改后需要重新生成并应用配置。')),
+		shinraUi.sectionTitle(_('sing-box API')),
+		shinraUi.sectionDescription(_('这些设置用于生成 sing-box services 里的 API 服务。面板设置优先于已有 Profile；与 Clash API 端口冲突时请调整端口。修改后需要重新生成并应用配置。')),
 		E('label', { 'style': 'display: flex; align-items: center; gap: .5rem; margin-bottom: .6rem;' }, [
 			shinraUi.checkboxInput({ 'id': 'shinra-dashboard-enabled', 'checked': source.enabled ? 'checked' : null }),
-			E('span', {}, _('启用 Official API'))
+			E('span', {}, _('启用 sing-box API'))
 		]),
 		E('div', { 'style': 'display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: .75rem;' }, [
 			E('label', {}, [
@@ -299,7 +299,7 @@ function clashApiSettings() {
 
 	return E('div', { 'style': shinraUi.sectionStyle() }, [
 		shinraUi.sectionTitle(_('Clash API')),
-		shinraUi.sectionDescription(_('这些设置用于生成 sing-box experimental.clash_api。Profile 已配置且不与最终生效的 Official API 冲突时优先保留 Profile；端口冲突时使用这里的配置兜底。')),
+		shinraUi.sectionDescription(_('这些设置用于生成 sing-box experimental.clash_api。启用后以此页配置为准；浏览器访问来源固定允许，允许私有网络访问。')),
 		E('label', { 'style': 'display: flex; align-items: center; gap: .5rem; margin-bottom: .6rem;' }, [
 			shinraUi.checkboxInput({ 'id': 'shinra-clash-api-enabled', 'checked': clash.enabled ? 'checked' : null }),
 			E('span', {}, _('启用 Clash API'))
@@ -339,7 +339,7 @@ function renderContent() {
 	return E('div', { 'id': 'shinra-panel-settings-root' }, [
 		shinraUi.pageHeader(
 			_('面板'),
-			_('Official API 负责 Dashboard 托管；Clash API 用于兼容面板的模式和策略组控制。Profile 中已配置的 API 会优先保留，端口冲突时使用此页设置兜底。Shinra 只保存设置并在重新生成配置时写入 sing-box。')
+			_('sing-box API 负责 Dashboard 托管；Clash API 用于兼容面板的模式和策略组控制。此页设置优先，并在重新生成配置时写入 sing-box。')
 		),
 		apiSettings(),
 		dashboardSettings(),
