@@ -3,7 +3,6 @@
 'require rpc';
 'require shinra.time as shinraTime';
 'require shinra.ui as shinraUi';
-'require shinra.dashboard as shinraDashboard';
 'require shinra.motion as shinraMotion';
 
 const callOverviewStatus = rpc.declare({
@@ -65,6 +64,13 @@ function safeJson(text) {
 	} catch (e) {
 		return {};
 	}
+}
+
+function routerHostUrl(url) {
+	url = shinraUi.valueText(url);
+	if (url === '-')
+		return url;
+	return url.replace('://<router-host>', '://%s'.format(window.location.hostname || 'router-host'));
 }
 
 function cardStyle(accent, clickable) {
@@ -375,19 +381,26 @@ function ensureSupplementalLoad() {
 function runtimeCards() {
 	const state = stateOf();
 	const status = shinraUi.dataOf(pageResults.apiStatus);
-	const singboxApi = status.singbox_api || {};
+	const official = status.official_api || {};
+	const clash = status.clash_api || {};
 	const running = !!state.sing_box_running;
 	const tun = !!state.tun_exists;
 	const config = !!state.runtime_config_exists;
-	const apiObserved = singboxApi.available != null || singboxApi.configured != null;
-	const apiOk = singboxApi.available === true;
+	const officialObserved = official.available != null || official.configured != null;
+	const clashObserved = clash.available != null || clash.configured != null;
+	const apiObserved = officialObserved || clashObserved;
+	const officialOk = official.available === true;
+	const clashOk = clash.available === true;
 	let apiValue = _('未观测');
 	let apiAccent = '#64748b';
 
 	if (apiObserved) {
-		if (apiOk) {
-			apiValue = _('可用');
+		if (officialOk && clashOk) {
+			apiValue = _('全部可用');
 			apiAccent = '#16a34a';
+		} else if (officialOk || clashOk) {
+			apiValue = _('部分可用');
+			apiAccent = '#ea580c';
 		} else {
 			apiValue = _('不可用');
 			apiAccent = '#dc2626';
@@ -398,7 +411,7 @@ function runtimeCards() {
 		card(_('运行时'), running ? _('运行中') : _('已停止'), running ? _('sing-box 服务运行中') : _('服务已停止'), statusTone(running)),
 		card(_('TUN'), tun ? _('存在') : _('缺失'), state.tun_name || '-', statusTone(tun, running)),
 		card(_('配置'), config ? _('就绪') : _('缺失'), state.runtime_config_hash ? _('已观测到运行配置哈希') : _('运行配置缺失'), statusTone(config)),
-		card(_('sing-box API'), apiValue, apiObserved ? (apiOk ? _('运行中') : (singboxApi.reason || _('不可用'))) : '-', apiAccent)
+		card(_('API'), apiValue, _('Official API: %s | Clash API: %s').format(officialObserved ? (officialOk ? _('可用') : _('不可用')) : '-', clashObserved ? (clashOk ? _('可用') : _('不可用')) : '-'), apiAccent)
 	]);
 }
 
@@ -455,13 +468,10 @@ function resourceCards() {
 		rulesResultText,
 		rulesAutoApplyText ? ' | ' + rulesAutoApplyText : ''
 	);
-	const singboxApi = shinraUi.dataOf(pageResults.apiStatus).singbox_api || {};
-	const panelReady = panelSource.enabled == true && panelDashboard.enabled == true && panelDashboard.ready == true && singboxApi.available == true;
-	const panelUrl = shinraDashboard.resolve(panelSource).dashboardUrl;
-	const panelDetail = panelReady
-		? _('%s | %s').format(_('Dashboard 已就绪'), panelDashboard.path || '-')
-		: _('请先生成并应用配置；首次启动会自动下载 Dashboard。');
-	const panelAction = panelReady && panelUrl !== '-' ? E('a', {
+	const panelReady = panelSource.enabled == true && panelDashboard.enabled == true;
+	const panelUrl = routerHostUrl(panel.dashboard_url);
+	const panelDetail = _('%s | %s').format(panelUrl !== '-' ? _('Dashboard 已托管') : _('Dashboard 地址未知'), panelDashboard.path || '-');
+	const panelAction = panelUrl !== '-' ? E('a', {
 			'class': shinraMotion.iconButtonClass(),
 			'href': panelUrl,
 			'target': '_blank',

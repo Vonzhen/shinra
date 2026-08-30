@@ -10,7 +10,7 @@ import { Success, Fail } from 'shinra.core.result';
 import { ERR } from 'shinra.core.error';
 import { read_optional_text, write_text_atomic, parse_json_object, request_content, request_keys, json_stringify_pretty } from 'shinra.core.utils';
 
-const DEFAULT_DASHBOARD_DOWNLOAD_URL = "https://github.com/miozen/shinra-dashboard/releases/latest/download/shinra-dashboard.zip";
+const DEFAULT_DASHBOARD_DOWNLOAD_URL = "https://github.com/Zephyruso/zashboard/releases/latest/download/dist.zip";
 
 function default_dashboard_source() {
 	return {
@@ -20,17 +20,18 @@ function default_dashboard_source() {
 		secret: "",
 		access_control_allow_origin: [ "*" ],
 		access_control_allow_private_network: true,
-		public_access: {
-			enabled: false,
-			origin: "",
-			dashboard_path: "/shinra/dashboard/",
-			api_path: "/"
-		},
 		dashboard: {
 			enabled: true,
 			path: PATH.DASHBOARD_DIR,
 			download_url: DEFAULT_DASHBOARD_DOWNLOAD_URL,
 			update_interval: "1d"
+		},
+		clash_api: {
+			enabled: true,
+			external_controller: "0.0.0.0:9090",
+			secret: "",
+			external_ui: "",
+			default_mode: "rule"
 		}
 	};
 }
@@ -51,58 +52,6 @@ function normalize_origin_list(raw) {
 
 	if (!length(result))
 		return [ "*" ];
-	return result;
-}
-
-function normalize_public_origin(value) {
-	if (type(value) != "string")
-		return "";
-
-	let origin = value;
-	while (length(origin) && substr(origin, length(origin) - 1, 1) == "/")
-		origin = substr(origin, 0, length(origin) - 1);
-
-	if (origin == "")
-		return "";
-	if (!valid_url(origin))
-		die("public_access.origin must start with http:// or https://");
-
-	let authority = index(origin, "https://") == 0 ? substr(origin, 8) : substr(origin, 7);
-	if (authority == "" || index(authority, "/") >= 0 || index(authority, "?") >= 0 || index(authority, "#") >= 0 || index(authority, "@") >= 0)
-		die("public_access.origin must contain only scheme, host and optional port");
-
-	return origin;
-}
-
-function normalize_public_path(value, fallback, field) {
-	let path = type(value) == "string" && value != "" ? value : fallback;
-	if (substr(path, 0, 1) != "/")
-		die(field + " must start with /");
-	if (index(path, "?") >= 0 || index(path, "#") >= 0)
-		die(field + " must not contain query or fragment");
-	if (substr(path, length(path) - 1, 1) != "/")
-		path += "/";
-	return path;
-}
-
-function normalize_public_access(raw) {
-	let defaults = default_dashboard_source().public_access;
-	let result = {
-		enabled: false,
-		origin: "",
-		dashboard_path: defaults.dashboard_path,
-		api_path: defaults.api_path
-	};
-
-	if (type(raw) == "object" && raw != null && type(raw) != "array") {
-		result.enabled = raw.enabled == true;
-		result.origin = normalize_public_origin(raw.origin);
-		result.dashboard_path = normalize_public_path(raw.dashboard_path, defaults.dashboard_path, "public_access.dashboard_path");
-	}
-
-	if (result.enabled && result.origin == "")
-		die("public_access.origin is required when public access is enabled");
-
 	return result;
 }
 
@@ -133,6 +82,39 @@ function normalize_dashboard(raw) {
 	return result;
 }
 
+function normalize_clash_api(raw) {
+	let defaults = default_dashboard_source().clash_api;
+	let result = {
+		enabled: true,
+		external_controller: defaults.external_controller,
+		secret: "",
+		external_ui: "",
+		default_mode: defaults.default_mode
+	};
+
+	if (type(raw) == "object" && raw != null && type(raw) != "array") {
+		result.enabled = raw.enabled == false ? false : true;
+		if (type(raw.external_controller) == "string" && raw.external_controller != "")
+			result.external_controller = raw.external_controller;
+		if (type(raw.secret) == "string")
+			result.secret = raw.secret;
+		if (type(raw.external_ui) == "string")
+			result.external_ui = raw.external_ui;
+		if (type(raw.default_mode) == "string" && raw.default_mode != "")
+			result.default_mode = raw.default_mode;
+	}
+
+	let parts = split(result.external_controller, ":");
+	if (length(parts) < 2)
+		die("clash_api.external_controller must be host:port");
+
+	let port = int(parts[length(parts) - 1] || 0);
+	if (port <= 0 || port > 65535)
+		die("clash_api.external_controller port must be between 1 and 65535");
+
+	return result;
+}
+
 function normalize_dashboard_source(source) {
 	if (type(source) != "object" || source == null || type(source) == "array")
 		die("Dashboard source root must be a JSON object");
@@ -143,15 +125,26 @@ function normalize_dashboard_source(source) {
 		die("listen_port must be between 1 and 65535");
 
 	let listen = type(source.listen) == "string" && source.listen != "" ? source.listen : defaults.listen;
+	let secret = type(source.secret) == "string" ? source.secret : "";
+	let has_clash_api = type(source.clash_api) == "object" && source.clash_api != null && type(source.clash_api) != "array";
+	let dashboard = normalize_dashboard(source.dashboard);
+
+	/* Sources written by the retired Shinra Dashboard integration have no
+	 * clash_api section and point at shinra-dashboard.zip. Restore the
+	 * Zashboard default during downgrade without changing existing Clash API
+	 * users' settings. */
+	if (!has_clash_api && dashboard.download_url == "https://github.com/miozen/shinra-dashboard/releases/latest/download/shinra-dashboard.zip")
+		dashboard.download_url = defaults.dashboard.download_url;
+
 	return {
 		enabled: source.enabled == false ? false : true,
 		listen: listen,
 		listen_port: listen_port,
-		secret: "",
+		secret: secret,
 		access_control_allow_origin: normalize_origin_list(source.access_control_allow_origin),
 		access_control_allow_private_network: source.access_control_allow_private_network == true ? true : false,
-		public_access: normalize_public_access(source.public_access),
-		dashboard: normalize_dashboard(source.dashboard)
+		dashboard: dashboard,
+		clash_api: normalize_clash_api(source.clash_api)
 	};
 }
 
@@ -176,8 +169,6 @@ function dashboard_url(source) {
 function dashboard_status_data(source) {
 	let info = stat(source.dashboard.path);
 	let path_exists = type(info) == "object" && info != null;
-	let index_info = stat(source.dashboard.path + "/index.html");
-	let dashboard_ready = type(index_info) == "object" && index_info != null;
 
 	return {
 		source_path: PATH.DASHBOARD_SOURCE,
@@ -187,13 +178,13 @@ function dashboard_status_data(source) {
 		secret_configured: source.secret != "",
 		access_control_allow_origin: source.access_control_allow_origin,
 		access_control_allow_private_network: source.access_control_allow_private_network,
-		public_access: source.public_access,
 		api_url: "http://" + (source.listen == "0.0.0.0" || source.listen == "::" ? "<router-host>" : source.listen) + ":" + source.listen_port + "/",
 		dashboard_url: dashboard_url(source),
 		dashboard: source.dashboard,
+		clash_api: source.clash_api,
+		clash_api_secret_configured: source.clash_api.secret != "",
 		dashboard_path_exists: path_exists,
 		dashboard_path_size: path_exists && type(info.size) == "int" ? info.size : 0,
-		dashboard_ready: dashboard_ready,
 		source: source
 	};
 }

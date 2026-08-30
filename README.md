@@ -5,16 +5,8 @@ Shinra 是面向 OpenWrt 25.12+ 的 sing-box TUN 与 LuCI 管理插件。APK 是
 
 ## Dashboard 访问模型
 
-默认且必须保持稳定的是内网直连：
-
-```text
-LuCI / Dashboard -> http://<路由器地址>:20123/dashboard/
-```
-
-公网反向代理是可选增强。启用后，只有浏览器当前 Origin 精确匹配已配置的公网 Origin 时，
-Shinra 才会使用配置的 Dashboard 与 API 路径（例如 `/shinra/dashboard/` 与
-`/`）。NPS 的域名、证书、路径重写、WebSocket 与访问控制始终在 NPS 服务器
-维护，Shinra 不管理 NPS，也不为此引入本机 nginx。
+Shinra 使用 Zashboard，并通过 sing-box 的 `experimental.clash_api` 提供面板所需
+的兼容 API。默认使用内网直连；反向代理和公网访问不属于 Shinra 管理范围。
 
 详细的开发、验收与发布流程见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)。
 

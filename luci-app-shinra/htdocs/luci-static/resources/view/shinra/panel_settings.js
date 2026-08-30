@@ -23,7 +23,7 @@ const callDashboardStatus = rpc.declare({
 	expect: { '': {} }
 });
 
-const DEFAULT_DOWNLOAD_URL = 'https://github.com/miozen/shinra-dashboard/releases/latest/download/shinra-dashboard.zip';
+const DEFAULT_DOWNLOAD_URL = 'https://github.com/Zephyruso/zashboard/releases/latest/download/dist-sarasa-only.zip';
 
 let sourceResult = null;
 let statusResult = null;
@@ -44,17 +44,18 @@ function defaultSource() {
 		secret: '',
 		access_control_allow_origin: [ '*' ],
 		access_control_allow_private_network: true,
-		public_access: {
-			enabled: false,
-			origin: '',
-			dashboard_path: '/shinra/dashboard/',
-			api_path: '/'
-		},
 		dashboard: {
 			enabled: true,
 			path: '/www/shinra/dashboard',
 			download_url: DEFAULT_DOWNLOAD_URL,
 			update_interval: '1d'
+		},
+		clash_api: {
+			enabled: true,
+			external_controller: '0.0.0.0:9090',
+			secret: '',
+			external_ui: '',
+			default_mode: 'rule'
 		}
 	};
 }
@@ -70,9 +71,9 @@ function dashboardOf() {
 	return source.dashboard || defaultSource().dashboard;
 }
 
-function publicAccessOf() {
+function clashApiOf() {
 	const source = sourceOf();
-	return source.public_access || defaultSource().public_access;
+	return source.clash_api || defaultSource().clash_api;
 }
 
 function resultMessage(result, fallback) {
@@ -122,28 +123,82 @@ function inputChecked(id, fallback) {
 	return node ? !!node.checked : !!fallback;
 }
 
+function parseOrigins(value) {
+	const text = String(value || '');
+	const items = text.split(/[\n,]+/).map(function(item) {
+		return item.trim();
+	}).filter(function(item) {
+		return item;
+	});
+
+	return items.length ? items : [ '*' ];
+}
+
+function originText(source) {
+	const origins = source.access_control_allow_origin;
+	if (!Array.isArray(origins) || !origins.length)
+		return '*';
+	return origins.join('\n');
+}
+
+function splitController(controller) {
+	const value = String(controller || '0.0.0.0:9090');
+	const fallback = { host: '0.0.0.0', port: 9090 };
+	const bracketEnd = value.indexOf(']');
+
+	if (value.charAt(0) === '[' && bracketEnd > 0) {
+		const port = Number(value.substr(bracketEnd + 2));
+		return {
+			host: value.substr(1, bracketEnd - 1),
+			port: Number.isFinite(port) && port > 0 ? port : fallback.port
+		};
+	}
+
+	const offset = value.lastIndexOf(':');
+	if (offset <= 0)
+		return fallback;
+
+	const port = Number(value.substr(offset + 1));
+	return {
+		host: value.substr(0, offset) || fallback.host,
+		port: Number.isFinite(port) && port > 0 ? port : fallback.port
+	};
+}
+
+function joinController(host, port) {
+	host = String(host || '0.0.0.0');
+	port = Number(port || 9090);
+	if (!Number.isFinite(port) || port <= 0)
+		port = 9090;
+	if (host.indexOf(':') >= 0 && host.charAt(0) !== '[')
+		host = '[' + host + ']';
+	return host + ':' + port;
+}
+
 function collectSource() {
 	const source = sourceOf();
 	const port = Number(inputValue('shinra-dashboard-listen-port', source.listen_port || 20123));
+	const clashPort = Number(inputValue('shinra-clash-api-listen-port', splitController(clashApiOf().external_controller).port));
 
 	return {
 		enabled: inputChecked('shinra-dashboard-enabled', true),
 		listen: inputValue('shinra-dashboard-listen', '0.0.0.0'),
 		listen_port: Number.isFinite(port) ? port : 20123,
-		secret: '',
-		access_control_allow_origin: [ '*' ],
-		access_control_allow_private_network: true,
-		public_access: {
-			enabled: inputChecked('shinra-public-access-enabled', false),
-			origin: inputValue('shinra-public-access-origin', ''),
-			dashboard_path: inputValue('shinra-public-dashboard-path', '/shinra/dashboard/'),
-			api_path: '/'
-		},
+		secret: inputValue('shinra-dashboard-secret', ''),
+		access_control_allow_origin: parseOrigins(inputValue('shinra-dashboard-origins', '*')),
+		access_control_allow_private_network: inputChecked('shinra-dashboard-private-network', true),
 		dashboard: {
 			enabled: inputChecked('shinra-dashboard-ui-enabled', true),
 			path: inputValue('shinra-dashboard-path', '/www/shinra/dashboard'),
 			download_url: inputValue('shinra-dashboard-download-url', DEFAULT_DOWNLOAD_URL),
 			update_interval: inputValue('shinra-dashboard-update-interval', '1d')
+		},
+		clash_api: {
+			enabled: inputChecked('shinra-clash-api-enabled', true),
+			external_controller: joinController(inputValue('shinra-clash-api-listen', '0.0.0.0'), clashPort),
+			secret: inputValue('shinra-clash-api-secret', ''),
+			external_ui: inputValue('shinra-clash-api-external-ui', ''),
+			default_mode: inputValue('shinra-clash-api-default-mode', 'rule')
 		}
 	};
 }
@@ -182,11 +237,11 @@ function apiSettings() {
 	const source = sourceOf();
 
 	return E('div', { 'style': shinraUi.sectionStyle() }, [
-		shinraUi.sectionTitle(_('sing-box API')),
-		shinraUi.sectionDescription(_('这些设置用于生成由 Shinra 管理的 sing-box API 服务。Dashboard 通过同源地址连接该服务，访问密钥固定留空。修改后需要重新生成并应用配置。')),
+		shinraUi.sectionTitle(_('Official API')),
+		shinraUi.sectionDescription(_('这些设置用于生成 sing-box services 里的 API 服务。Profile 已配置 Official API 且不冲突时优先保留 Profile；与 Clash API 端口冲突时使用这里的配置兜底。修改后需要重新生成并应用配置。')),
 		E('label', { 'style': 'display: flex; align-items: center; gap: .5rem; margin-bottom: .6rem;' }, [
 			shinraUi.checkboxInput({ 'id': 'shinra-dashboard-enabled', 'checked': source.enabled ? 'checked' : null }),
-			E('span', {}, _('启用 sing-box API'))
+			E('span', {}, _('启用 Official API'))
 		]),
 		E('div', { 'style': 'display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: .75rem;' }, [
 			E('label', {}, [
@@ -197,6 +252,18 @@ function apiSettings() {
 				shinraUi.fieldLabel(_('监听端口')),
 				E('input', { 'id': 'shinra-dashboard-listen-port', 'type': 'number', 'min': '1', 'max': '65535', 'class': 'cbi-input-text', 'style': 'width: 100%; box-sizing: border-box;', 'value': source.listen_port || 20123 })
 			]),
+			E('label', {}, [
+				shinraUi.fieldLabel(_('访问密钥')),
+				E('input', { 'id': 'shinra-dashboard-secret', 'class': 'cbi-input-text', 'style': 'width: 100%; box-sizing: border-box;', 'placeholder': _('私有局域网可留空'), 'value': source.secret || '' })
+			])
+		]),
+		E('label', { 'style': 'display: block; margin-top: .6rem;' }, [
+			shinraUi.fieldLabel(_('允许的 CORS 来源')),
+			E('textarea', { 'id': 'shinra-dashboard-origins', 'class': 'cbi-input-textarea', 'style': 'width: 100%; min-height: 64px; box-sizing: border-box;' }, originText(source))
+		]),
+		E('label', { 'style': 'display: flex; align-items: center; gap: .5rem; margin-top: .6rem;' }, [
+			shinraUi.checkboxInput({ 'id': 'shinra-dashboard-private-network', 'checked': source.access_control_allow_private_network ? 'checked' : null }),
+			E('span', {}, _('允许私有网络访问'))
 		])
 	]);
 }
@@ -226,51 +293,42 @@ function dashboardSettings() {
 	]);
 }
 
-function publicAccessSettings() {
-	const source = sourceOf();
-	const publicAccess = publicAccessOf();
-	const port = source.listen_port || 20123;
-	const dashboardPath = publicAccess.dashboard_path || '/shinra/dashboard/';
-	const routerIp = _('OpenWrt 管理 IP');
-	const target = routerIp + ':' + port;
-	const routeStyle = 'padding: .45rem .6rem; border: 1px solid #dfe3e8; border-radius: 6px; background: #f8fafc; overflow-wrap: anywhere;';
+function clashApiSettings() {
+	const clash = clashApiOf();
+	const controller = splitController(clash.external_controller);
 
 	return E('div', { 'style': shinraUi.sectionStyle() }, [
-		shinraUi.sectionTitle(_('公网反向代理访问（可选）')),
-		shinraUi.sectionDescription(_('这是可选增强功能。Shinra 不创建或管理 NPS 规则，只根据当前访问 Origin 选择公网路径；未启用或 Origin 不匹配时，Dashboard 始终使用内网直连。')),
+		shinraUi.sectionTitle(_('Clash API')),
+		shinraUi.sectionDescription(_('这些设置用于生成 sing-box experimental.clash_api。Profile 已配置且不与最终生效的 Official API 冲突时优先保留 Profile；端口冲突时使用这里的配置兜底。')),
 		E('label', { 'style': 'display: flex; align-items: center; gap: .5rem; margin-bottom: .6rem;' }, [
-			shinraUi.checkboxInput({ 'id': 'shinra-public-access-enabled', 'checked': publicAccess.enabled ? 'checked' : null }),
-			E('span', {}, _('启用公网反向代理入口'))
+			shinraUi.checkboxInput({ 'id': 'shinra-clash-api-enabled', 'checked': clash.enabled ? 'checked' : null }),
+			E('span', {}, _('启用 Clash API'))
 		]),
-		E('label', { 'style': 'display: block; margin-top: .6rem;' }, [
-			shinraUi.fieldLabel(_('公网 Origin')),
-			E('input', { 'id': 'shinra-public-access-origin', 'class': 'cbi-input-text', 'style': 'width: 100%; box-sizing: border-box;', 'placeholder': 'https://mop.miozen.uk', 'value': publicAccess.origin || '' }),
-			E('div', { 'style': shinraUi.mutedStyle('font-size: 12px; margin-top: .25rem;') }, _('只填写协议、域名和可选端口，不填写路径。例如：https://mop.miozen.uk'))
-		]),
-		E('div', { 'style': 'display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: .75rem; margin-top: .6rem;' }, [
+		E('div', { 'style': 'display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: .75rem;' }, [
 			E('label', {}, [
-				shinraUi.fieldLabel(_('Dashboard 公网路径')),
-				E('input', { 'id': 'shinra-public-dashboard-path', 'class': 'cbi-input-text', 'style': 'width: 100%; box-sizing: border-box;', 'value': dashboardPath })
+				shinraUi.fieldLabel(_('监听地址')),
+				E('input', { 'id': 'shinra-clash-api-listen', 'class': 'cbi-input-text', 'style': 'width: 100%; box-sizing: border-box;', 'value': controller.host || '0.0.0.0' })
+			]),
+			E('label', {}, [
+				shinraUi.fieldLabel(_('监听端口')),
+				E('input', { 'id': 'shinra-clash-api-listen-port', 'type': 'number', 'min': '1', 'max': '65535', 'class': 'cbi-input-text', 'style': 'width: 100%; box-sizing: border-box;', 'value': controller.port || 9090 })
+			]),
+			E('label', {}, [
+				shinraUi.fieldLabel(_('访问密钥')),
+				E('input', { 'id': 'shinra-clash-api-secret', 'class': 'cbi-input-text', 'style': 'width: 100%; box-sizing: border-box;', 'placeholder': _('私有局域网可留空'), 'value': clash.secret || '' })
+			]),
+			E('label', {}, [
+				shinraUi.fieldLabel(_('默认模式')),
+				E('select', { 'id': 'shinra-clash-api-default-mode', 'class': 'cbi-input-select', 'style': 'width: 100%; box-sizing: border-box;' }, [
+					E('option', { 'value': 'rule', 'selected': (clash.default_mode || 'rule') === 'rule' ? 'selected' : null }, _('rule')),
+					E('option', { 'value': 'global', 'selected': clash.default_mode === 'global' ? 'selected' : null }, _('global')),
+					E('option', { 'value': 'direct', 'selected': clash.default_mode === 'direct' ? 'selected' : null }, _('direct'))
+				])
 			])
 		]),
-		E('div', { 'style': 'margin-top: .85rem;' }, [
-			E('div', { 'style': 'font-weight: 700; margin-bottom: .4rem;' }, _('NPS 服务器配置方法')),
-			E('div', { 'style': shinraUi.mutedStyle('margin-bottom: .5rem;') }, _('在 NPS 的 HTTP 代理中配置以下三条路径规则。目标地址必须填写 OpenWrt 的明确内网管理 IP，不能填写 0.0.0.0 或 127.0.0.1；例如本机管理地址为 10.10.11.1 时，目标分别是 10.10.11.1:80 和 10.10.11.1:20123。')),
-			E('div', { 'style': 'display: grid; gap: .45rem;' }, [
-				E('div', { 'style': routeStyle }, [
-					E('strong', {}, _('LuCI：')),
-					'/ → %s:80，保持原路径'.format(routerIp)
-				]),
-				E('div', { 'style': routeStyle }, [
-					E('strong', {}, _('Dashboard：')),
-					'%s → %s，重写为 /dashboard/'.format(dashboardPath, target)
-				]),
-				E('div', { 'style': routeStyle }, [
-					E('strong', {}, _('sing-box gRPC / WebSocket：')),
-					'/daemon.StartedService/ → %s，保持原路径（不重写）'.format(target)
-				])
-			]),
-			E('div', { 'style': shinraUi.mutedStyle('font-size: 12px; margin-top: .5rem;') }, _('Dashboard 与 gRPC/WebSocket 规则使用同一个 sing-box API 监听端口。API 公网路径应保持为 /，以便请求直接落在 /daemon.StartedService/；路径匹配应优先于根路径规则，避免 / 被提前接管。公网 HTTPS 入口应由 NPS 或其上游负责证书与访问控制。'))
+		E('label', { 'style': 'display: block; margin-top: .6rem;' }, [
+			shinraUi.fieldLabel(_('External UI')),
+			E('input', { 'id': 'shinra-clash-api-external-ui', 'class': 'cbi-input-text', 'style': 'width: 100%; box-sizing: border-box;', 'placeholder': _('通常留空'), 'value': clash.external_ui || '' })
 		])
 	]);
 }
@@ -281,11 +339,11 @@ function renderContent() {
 	return E('div', { 'id': 'shinra-panel-settings-root' }, [
 		shinraUi.pageHeader(
 			_('面板'),
-			_('sing-box API 负责托管并同源提供 Shinra Dashboard；Shinra 在重新生成配置时写入固定的无密钥 API 服务。')
+			_('Official API 负责 Dashboard 托管；Clash API 用于兼容面板的模式和策略组控制。Profile 中已配置的 API 会优先保留，端口冲突时使用此页设置兜底。Shinra 只保存设置并在重新生成配置时写入 sing-box。')
 		),
 		apiSettings(),
 		dashboardSettings(),
-		publicAccessSettings(),
+		clashApiSettings(),
 		E('div', { 'style': 'display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; margin-top: .7rem;' }, [
 			E('button', { 'class': shinraMotion.buttonClass('btn cbi-button cbi-button-save'), 'click': function(ev) { ev.preventDefault(); return saveSource(); } }, _('保存设置')),
 			inlineResultNode()

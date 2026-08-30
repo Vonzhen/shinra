@@ -15,10 +15,9 @@ Shinra 以 OpenWrt 25.12 及更高版本为主要目标，发布物以 APK 为�
 
 ### 业务访问契约
 
-- 内网直连是默认和优先路径：Dashboard 使用 `http://<路由器地址>:<API端口>/dashboard/`。
-- 公网反代是可选增强，只有当前浏览器 Origin 精确匹配已配置的公网 Origin 时才启用；未配置、关闭或不匹配时必须回退到内网直连。
-- NPS 的域名、TLS、路径重写、WebSocket 转发和访问控制属于 NPS 服务器配置；Shinra 只展示所需路径映射说明，不创建、不管理 NPS，也不引入本机 nginx。
-- Dashboard 的公网 API 只能使用与 Dashboard 页面同源的路径；REST/gRPC 与 WebSocket 必须共享同一 API 基址。
+- Shinra 使用 Zashboard；面板兼容接口来自 sing-box 的 `experimental.clash_api`。
+- 内网直连是默认和优先路径。反向代理、公网访问、TLS、路径重写、WebSocket 转发和访问控制均属于外部网关配置，不属于 Shinra 的功能或兼容承诺。
+- Dashboard 的下载来源、Clash API 监听地址、访问密钥和默认模式由 LuCI 面板设置保存，并在生成配置时写入 sing-box。
 
 ## 分支职责
 

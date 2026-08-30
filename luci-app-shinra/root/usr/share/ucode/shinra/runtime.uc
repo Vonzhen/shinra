@@ -123,6 +123,7 @@ function runtime_state_json(trace_id, service_result, ownership) {
 		"\"runtime_config_hash\":\"" + json_escape(runtime_hash(trace_id)) + "\"," +
 		"\"tun_exists\":" + (tun_exists(trace_id, tun_name) ? "true" : "false") + "," +
 		"\"tun_name\":\"" + json_escape(tun_name) + "\"," +
+		"\"clash_api_available\":false," +
 		"\"last_apply_result\":\"" + json_escape(last_apply_result) + "\"," +
 		"\"recent_error\":\"" + json_escape(last_error) + "\"," +
 		"\"shinra_managed_processes\":" + sprintf("%J", ownership.shinra_managed_processes) + "," +
